@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CustomerWithBalance, Movement, Customer, CustomerVisit, WhatsAppTemplates } from './types';
+import { AlertCircle } from 'lucide-react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   getCustomersWithBalances,
   getStoredMovements,
@@ -134,11 +136,14 @@ export default function App() {
   };
 
   // Guardado de entidades
-  const handleSaveCustomer = (custData: Omit<Customer, 'id' | 'createdAt'>) => {
+  const handleSaveCustomer = (
+    custData: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>,
+    initialBalance: number = 0
+  ) => {
     if (editingCustomer) {
       updateCustomer(editingCustomer.id, custData, currentUserRole);
     } else {
-      addCustomer(custData, currentUserRole);
+      addCustomer(custData, initialBalance, currentUserRole);
     }
     refreshData();
   };
@@ -163,8 +168,11 @@ export default function App() {
     refreshData();
   };
 
-  const handleSelectCustomer = (cust: CustomerWithBalance) => {
-    setSelectedCustomerId(cust.id);
+  const handleSelectCustomer = (param: CustomerWithBalance | string) => {
+    if (!param) return;
+    const id = typeof param === 'string' ? param : param.id;
+    if (!id) return;
+    setSelectedCustomerId(id);
     setActiveView('fichacliente');
   };
 
@@ -172,9 +180,10 @@ export default function App() {
 
   // Cálculos rápidos para la barra de navegación
   const totalDeudaGlobal = customers.reduce((sum, c) => sum + Math.max(0, c.saldoActual), 0);
-  const riskyCount = customers.filter(
-    (c) => c.evaluacionRiesgo.nivel === 'ALTO' || c.evaluacionRiesgo.nivel === 'CRITICO'
-  ).length;
+  const riskyCount = customers.filter((c) => {
+    const level = c.evaluacionRiesgo?.level || (c.evaluacionRiesgo as any)?.nivel;
+    return level === 'ALTO' || level === 'CRITICO';
+  }).length;
 
   const availableRoutes = Array.from(new Set(customers.map((c) => c.zonaRuta))).filter(Boolean);
   const activityLogs = getActivityLogs();
@@ -208,112 +217,132 @@ export default function App() {
 
       {/* Content Body Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        {activeView === 'finalizarventa' && (
-          <FinalizarVentaScreen
-            customers={customers}
-            onSaleCompleted={refreshData}
-            currentUserRole={currentUserRole}
-            preselectedCustomer={preselectedCustomerForSale}
-            onClearPreselectedCustomer={() => setPreselectedCustomerForSale(undefined)}
-            onViewImage={(url, title) =>
-              setImageViewerData({ isOpen: true, imageUrl: url, title })
-            }
-          />
-        )}
+        <ErrorBoundary onReset={() => setActiveView('finalizarventa')}>
+          {activeView === 'finalizarventa' && (
+            <FinalizarVentaScreen
+              customers={customers}
+              onSaleCompleted={refreshData}
+              currentUserRole={currentUserRole}
+              preselectedCustomer={preselectedCustomerForSale}
+              onClearPreselectedCustomer={() => setPreselectedCustomerForSale(undefined)}
+              onViewImage={(url, title) =>
+                setImageViewerData({ isOpen: true, imageUrl: url, title })
+              }
+            />
+          )}
 
-        {activeView === 'hoy' && (
-          <HoyRepartidorScreen
-            customers={customers}
-            movements={movements}
-            visits={visits}
-            reminders={reminders}
-            templates={templates}
-            onOpenRegistrarVisita={handleOpenRegistrarVisita}
-            onSelectCustomer={handleSelectCustomer}
-            onStartSale={handleStartSaleForCustomer}
-            currentUserRole={currentUserRole}
-          />
-        )}
+          {activeView === 'hoy' && (
+            <HoyRepartidorScreen
+              customers={customers}
+              movements={movements}
+              visits={visits}
+              reminders={reminders}
+              templates={templates}
+              onOpenRegistrarVisita={handleOpenRegistrarVisita}
+              onSelectCustomer={handleSelectCustomer}
+              onStartSale={handleStartSaleForCustomer}
+              currentUserRole={currentUserRole}
+            />
+          )}
 
-        {activeView === 'dashboard' && (
-          <Dashboard
-            customers={customers}
-            movements={movements}
-            onSelectCustomer={handleSelectCustomer}
-            onOpenNewBoleta={handleOpenNewBoleta}
-            onOpenNewPago={handleOpenNewPago}
-            onGoToCobranzas={() => setActiveView('cobranzas')}
-            onGoToClientes={() => setActiveView('clientes')}
-          />
-        )}
+          {activeView === 'dashboard' && (
+            <Dashboard
+              customers={customers}
+              movements={movements}
+              onSelectCustomer={handleSelectCustomer}
+              onOpenNewBoleta={handleOpenNewBoleta}
+              onOpenNewPago={handleOpenNewPago}
+              onGoToCobranzas={() => setActiveView('cobranzas')}
+              onGoToClientes={() => setActiveView('clientes')}
+            />
+          )}
 
-        {activeView === 'cobranzas' && (
-          <CobranzasScreen
-            customers={customers}
-            movements={movements}
-            onOpenNewPago={handleOpenNewPago}
-            onOpenNewBoleta={handleOpenNewBoleta}
-            onSelectCustomer={handleSelectCustomer}
-          />
-        )}
+          {activeView === 'cobranzas' && (
+            <CobranzasScreen
+              customers={customers}
+              movements={movements}
+              onOpenNewPago={handleOpenNewPago}
+              onOpenNewBoleta={handleOpenNewBoleta}
+              onSelectCustomer={handleSelectCustomer}
+            />
+          )}
 
-        {activeView === 'clientes' && (
-          <CustomerList
-            customers={customers}
-            onSelectCustomer={handleSelectCustomer}
-            onOpenNewCustomer={handleOpenNewCustomer}
-            onOpenNewBoleta={handleOpenNewBoleta}
-            onOpenNewPago={handleOpenNewPago}
-          />
-        )}
+          {activeView === 'clientes' && (
+            <CustomerList
+              customers={customers}
+              onSelectCustomer={handleSelectCustomer}
+              onOpenNewCustomer={handleOpenNewCustomer}
+              onOpenNewBoleta={handleOpenNewBoleta}
+              onOpenNewPago={handleOpenNewPago}
+            />
+          )}
 
-        {activeView === 'fichacliente' && selectedCustomer && (
-          <CustomerDetail
-            customer={selectedCustomer}
-            movements={movements}
-            visits={visits}
-            templates={templates}
-            currentUserRole={currentUserRole}
-            onBack={() => setActiveView('clientes')}
-            onEditCustomer={handleEditCustomer}
-            onOpenNewBoleta={handleOpenNewBoleta}
-            onOpenNewPago={handleOpenNewPago}
-            onOpenNewAjuste={handleOpenNewAjuste}
-            onOpenRegistrarVisita={handleOpenRegistrarVisita}
-            onViewImage={(url, title) =>
-              setImageViewerData({ isOpen: true, imageUrl: url, title })
-            }
-          />
-        )}
+          {activeView === 'fichacliente' && (
+            selectedCustomer ? (
+              <CustomerDetail
+                customer={selectedCustomer}
+                movements={movements}
+                visits={visits}
+                templates={templates}
+                currentUserRole={currentUserRole}
+                onBack={() => setActiveView('clientes')}
+                onEditCustomer={handleEditCustomer}
+                onOpenNewBoleta={handleOpenNewBoleta}
+                onOpenNewPago={handleOpenNewPago}
+                onOpenNewAjuste={handleOpenNewAjuste}
+                onOpenRegistrarVisita={handleOpenRegistrarVisita}
+                onViewImage={(url, title) =>
+                  setImageViewerData({ isOpen: true, imageUrl: url, title })
+                }
+              />
+            ) : (
+              <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center space-y-4 max-w-md mx-auto my-12 shadow-sm">
+                <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">Cliente no seleccionado</h2>
+                <p className="text-xs text-slate-500">
+                  Seleccioná un cliente de la nómina para ver su ficha técnica detallada.
+                </p>
+                <button
+                  onClick={() => setActiveView('clientes')}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition"
+                >
+                  Ir a Lista de Clientes
+                </button>
+              </div>
+            )
+          )}
 
-        {activeView === 'cuentacorriente' && (
-          <CuentaCorrienteScreen
-            movements={movements}
-            customers={customers}
-            onSelectCustomer={handleSelectCustomer}
-            onViewImage={(url, title) =>
-              setImageViewerData({ isOpen: true, imageUrl: url, title })
-            }
-          />
-        )}
+          {activeView === 'cuentacorriente' && (
+            <CuentaCorrienteScreen
+              movements={movements}
+              customers={customers}
+              onSelectCustomer={handleSelectCustomer}
+              onViewImage={(url, title) =>
+                setImageViewerData({ isOpen: true, imageUrl: url, title })
+              }
+            />
+          )}
 
-        {activeView === 'boletas' && (
-          <BoletaGallery
-            movements={movements}
-            customers={customers}
-            onViewImage={(url, title) =>
-              setImageViewerData({ isOpen: true, imageUrl: url, title })
-            }
-            onSelectCustomer={handleSelectCustomer}
-          />
-        )}
+          {activeView === 'boletas' && (
+            <BoletaGallery
+              movements={movements}
+              customers={customers}
+              onViewImage={(url, title) =>
+                setImageViewerData({ isOpen: true, imageUrl: url, title })
+              }
+              onSelectCustomer={handleSelectCustomer}
+            />
+          )}
 
-        {activeView === 'auditoria' && (
-          <ActivityLogScreen
-            logs={activityLogs}
-            onSelectCustomer={handleSelectCustomer}
-          />
-        )}
+          {activeView === 'auditoria' && (
+            <ActivityLogScreen
+              logs={activityLogs}
+              onSelectCustomer={handleSelectCustomer}
+            />
+          )}
+        </ErrorBoundary>
       </main>
 
       {/* Modales */}

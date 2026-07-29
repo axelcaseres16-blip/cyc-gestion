@@ -65,11 +65,32 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
   const [activeTab, setActiveTab] = useState<'TIMELINE' | 'MOVIMIENTOS' | 'VISITAS'>('TIMELINE');
   const [movementFilter, setMovementFilter] = useState<string>('TODOS');
 
-  const activityLogs = getActivityLogs();
-  const timelineItems = getCustomerTimeline(customer.id, movements, visits, activityLogs);
+  if (!customer) {
+    return (
+      <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center space-y-4 max-w-md mx-auto my-12 shadow-sm">
+        <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto">
+          <AlertTriangle className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900">Cliente no encontrado</h2>
+        <p className="text-xs text-slate-500">No fue posible cargar la información solicitada o el cliente fue eliminado.</p>
+        <button
+          onClick={onBack}
+          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition"
+        >
+          Volver a Clientes
+        </button>
+      </div>
+    );
+  }
 
-  const customerMovements = movements
-    .filter((m) => m.customerId === customer.id)
+  const safeMovements = Array.isArray(movements) ? movements : [];
+  const safeVisits = Array.isArray(visits) ? visits : [];
+
+  const activityLogs = getActivityLogs();
+  const timelineItems = getCustomerTimeline(customer.id, safeMovements, safeVisits, activityLogs);
+
+  const customerMovements = safeMovements
+    .filter((m) => m && m.customerId === customer.id)
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
   const filteredMovements = customerMovements.filter((m) => {
@@ -79,7 +100,7 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
     return true;
   });
 
-  const level = customer.evaluacionRiesgo.level;
+  const level = customer.evaluacionRiesgo?.level || (customer.evaluacionRiesgo as any)?.nivel || 'BAJO';
   const isCritical = level === 'CRITICO';
   const isHigh = level === 'ALTO';
 
