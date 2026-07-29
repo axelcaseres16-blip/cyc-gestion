@@ -1,17 +1,16 @@
 import React from 'react';
-import { UserRoleSelector } from './UserRoleSelector';
 import { ConnectionStatusBadge } from './ConnectionStatusBadge';
+import { AppUser } from '../types';
 import {
-  FileText,
-  DollarSign,
+  LogOut,
   Download,
   Settings,
   MessageSquare,
-  Truck,
-  Building2,
-  ShieldAlert,
   Zap,
   Smartphone,
+  ShieldCheck,
+  UserCheck,
+  Truck,
 } from 'lucide-react';
 import { promptPwaInstall, checkIsStandalone } from '../utils/pwaManager';
 
@@ -24,8 +23,8 @@ interface NavbarProps {
   onOpenBackupModal: () => void;
   onOpenSettingsModal: () => void;
   onOpenSyncModal: () => void;
-  currentUserRole: string;
-  setCurrentUserRole: (role: string) => void;
+  currentUser: AppUser;
+  onLogout: () => void;
   totalDeudaGlobal: number;
 }
 
@@ -38,12 +37,34 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenBackupModal,
   onOpenSettingsModal,
   onOpenSyncModal,
-  currentUserRole,
-  setCurrentUserRole,
+  currentUser,
+  onLogout,
   totalDeudaGlobal,
 }) => {
-  const isRepartidor = currentUserRole === 'REPARTIDOR';
-  const isSoloLectura = currentUserRole === 'SOLO_LECTURA';
+  const isRepartidor = currentUser.role === 'REPARTIDOR';
+  const isDueno = currentUser.role === 'DUENO';
+
+  const getUserBadge = () => {
+    switch (currentUser.role) {
+      case 'DUENO':
+        return {
+          label: `👑 ${currentUser.nombre} - Dueño`,
+          style: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        };
+      case 'ADMINISTRADOR':
+        return {
+          label: `🛠️ ${currentUser.nombre} - Administrador`,
+          style: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+        };
+      case 'REPARTIDOR':
+        return {
+          label: `🚚 ${currentUser.nombre} - Repartidor`,
+          style: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        };
+    }
+  };
+
+  const userBadgeInfo = getUserBadge();
 
   return (
     <header id="app-header" className="sticky top-0 z-30 bg-[#0F172A] text-white shadow-md border-b border-slate-800">
@@ -61,7 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   Distribuidora
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block font-medium">Control de Clientes, Cuentas Corrientes y Cobranzas</p>
+              <p className="text-xs text-slate-400 hidden sm:block font-medium">Control de Clientes, Cuentas Corrientes y Reparto</p>
             </div>
           </div>
 
@@ -71,36 +92,38 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Quick Stats in Header (Desktop) */}
-          <div className="hidden lg:flex items-center space-x-6 bg-slate-800/80 px-4 py-1.5 rounded-2xl border border-slate-700/60">
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Deuda Total en Calle</p>
-              <p className="text-sm font-black text-emerald-400 font-mono">
-                {totalDeudaGlobal.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })}
-              </p>
+          {!isRepartidor && (
+            <div className="hidden lg:flex items-center space-x-6 bg-slate-800/80 px-4 py-1.5 rounded-2xl border border-slate-700/60">
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Deuda Total en Calle</p>
+                <p className="text-sm font-black text-emerald-400 font-mono">
+                  {totalDeudaGlobal.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Selector de Rol & Acciones */}
+          {/* User Badge, Actions & Logout */}
           <div className="flex items-center space-x-2 sm:space-x-3">
             {/* Botón Principal: Finalizar Venta Express */}
-            {!isSoloLectura && (
-              <button
-                id="btn-finalizar-venta-nav"
-                onClick={() => setActiveView('finalizarventa')}
-                className={`flex items-center space-x-1.5 text-xs sm:text-sm font-black px-3.5 py-2 rounded-xl transition shadow-md active:scale-95 ${
-                  activeView === 'finalizarventa'
-                    ? 'bg-emerald-500 text-slate-950 ring-2 ring-emerald-300'
-                    : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white'
-                }`}
-                title="Ir a Finalizar Venta Express"
-              >
-                <Zap className="w-4 h-4 fill-current" />
-                <span>Finalizar Venta</span>
-              </button>
-            )}
+            <button
+              id="btn-finalizar-venta-nav"
+              onClick={() => setActiveView('finalizarventa')}
+              className={`flex items-center space-x-1.5 text-xs sm:text-sm font-black px-3 py-2 rounded-xl transition shadow-md active:scale-95 ${
+                activeView === 'finalizarventa'
+                  ? 'bg-emerald-500 text-slate-950 ring-2 ring-emerald-300'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white'
+              }`}
+              title="Ir a Finalizar Venta Express"
+            >
+              <Zap className="w-4 h-4 fill-current" />
+              <span className="hidden sm:inline">Finalizar Venta</span>
+            </button>
 
-            {/* Selector de Rol Personalizado */}
-            <UserRoleSelector currentRole={currentUserRole} onRoleChange={setCurrentUserRole} />
+            {/* Badge Usuario Conectado */}
+            <div className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center space-x-1.5 ${userBadgeInfo.style}`}>
+              <span className="truncate max-w-[150px] sm:max-w-none">{userBadgeInfo.label}</span>
+            </div>
 
             {/* PWA Install Button */}
             {!checkIsStandalone() && (
@@ -116,28 +139,42 @@ export const Navbar: React.FC<NavbarProps> = ({
                 title="Instalar C&C en Pantalla Principal"
               >
                 <Smartphone className="w-4.5 h-4.5 text-blue-400" />
-                <span className="text-[11px] font-bold hidden xl:inline">Instalar App</span>
               </button>
             )}
 
-            {/* Plantillas WhatsApp Config */}
-            <button
-              id="btn-open-settings"
-              onClick={onOpenSettingsModal}
-              className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition"
-              title="Configuración de WhatsApp"
-            >
-              <MessageSquare className="w-4.5 h-4.5 text-emerald-400" />
-            </button>
+            {/* Configuración (Solo Admin/Dueño) */}
+            {!isRepartidor && (
+              <button
+                id="btn-open-settings"
+                onClick={onOpenSettingsModal}
+                className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition"
+                title="Configuración de WhatsApp"
+              >
+                <MessageSquare className="w-4.5 h-4.5 text-emerald-400" />
+              </button>
+            )}
 
-            {/* Respaldos */}
+            {/* Respaldos (Solo Admin/Dueño) */}
+            {!isRepartidor && (
+              <button
+                id="btn-open-backup"
+                onClick={onOpenBackupModal}
+                className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition hidden sm:block"
+                title="Respaldos y Datos"
+              >
+                <Download className="w-4.5 h-4.5" />
+              </button>
+            )}
+
+            {/* Botón Cerrar Sesión */}
             <button
-              id="btn-open-backup"
-              onClick={onOpenBackupModal}
-              className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition hidden sm:block"
-              title="Respaldos y Datos"
+              id="btn-logout"
+              onClick={onLogout}
+              className="p-2 text-red-300 hover:text-white bg-red-950/60 hover:bg-red-900/80 rounded-xl transition border border-red-800/50 flex items-center space-x-1"
+              title="Cerrar sesión"
             >
-              <Download className="w-4.5 h-4.5" />
+              <LogOut className="w-4.5 h-4.5 text-red-400" />
+              <span className="text-xs font-bold hidden xl:inline">Salir</span>
             </button>
           </div>
         </div>

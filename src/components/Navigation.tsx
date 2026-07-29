@@ -27,10 +27,9 @@ export const Navigation: React.FC<NavigationProps> = ({
   riskyCount,
 }) => {
   const isRepartidor = currentUserRole === 'REPARTIDOR';
-  const isCobranzas = currentUserRole === 'COBRANZAS';
-  const isSoloLectura = currentUserRole === 'SOLO_LECTURA';
+  const isDueno = currentUserRole === 'DUENO';
 
-  // Configuración dinámica de items según el rol seleccionado
+  // Configuración dinámica de items según los 3 roles oficiales
   let navItems = [
     {
       id: 'finalizarventa',
@@ -78,6 +77,14 @@ export const Navigation: React.FC<NavigationProps> = ({
     },
   ];
 
+  if (isDueno) {
+    navItems.push({
+      id: 'usuarios',
+      label: '👑 Usuarios',
+      icon: Users,
+    });
+  }
+
   if (isRepartidor) {
     navItems = [
       {
@@ -103,34 +110,9 @@ export const Navigation: React.FC<NavigationProps> = ({
         icon: Camera,
       },
     ];
-  } else if (isCobranzas) {
-    navItems = [
-      {
-        id: 'cobranzas',
-        label: 'Pantalla Cobranzas',
-        icon: DollarSign,
-        badge: 'Gestión',
-        badgeColor: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-      },
-      {
-        id: 'finalizarventa',
-        label: '⚡ Finalizar Venta',
-        icon: Zap,
-      },
-      {
-        id: 'clientes',
-        label: 'Clientes',
-        icon: Users,
-      },
-      {
-        id: 'cuentacorriente',
-        label: 'Cuentas Corrientes',
-        icon: Receipt,
-      },
-    ];
   }
 
-  const canCreateCustomer = !isRepartidor && !isSoloLectura;
+  const canCreateCustomer = !isRepartidor;
 
   return (
     <>

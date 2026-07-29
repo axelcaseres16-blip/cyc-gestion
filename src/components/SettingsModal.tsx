@@ -6,7 +6,11 @@ import {
   getWhatsAppBehavior,
   saveWhatsAppBehavior,
 } from '../utils/storage';
-import { X, Save, MessageSquare, CheckCircle2, Zap } from 'lucide-react';
+import {
+  getBoletasGroupPhone,
+  saveBoletasGroupPhone,
+} from '../utils/userStorage';
+import { X, Save, MessageSquare, CheckCircle2, Zap, Users } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,6 +26,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [informarSaldo, setInformarSaldo] = useState('');
   const [solicitarPedido, setSolicitarPedido] = useState('');
   const [waBehavior, setWaBehavior] = useState<WhatsAppPostSaleBehavior>('ALWAYS_AUTO');
+  const [boletasGroupPhone, setBoletasGroupPhone] = useState('');
   const [savedMsg, setSavedMsg] = useState(false);
 
   useEffect(() => {
@@ -30,6 +35,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setInformarSaldo(templates.informarSaldo);
       setSolicitarPedido(templates.solicitarPedido);
       setWaBehavior(getWhatsAppBehavior());
+      setBoletasGroupPhone(getBoletasGroupPhone());
     }
   }, [isOpen]);
 
@@ -42,6 +48,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       solicitarPedido,
     });
     saveWhatsAppBehavior(waBehavior);
+    saveBoletasGroupPhone(boletasGroupPhone);
 
     setSavedMsg(true);
     if (onTemplatesUpdated) onTemplatesUpdated();
@@ -73,7 +80,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* Configuración de Comportamiento de WhatsApp Post-Venta */}
+          {/* Grupo Oficial de WhatsApp de Boletas */}
+          <div className="p-4 bg-blue-50/80 border border-blue-200 rounded-2xl space-y-2">
+            <div className="flex items-center space-x-2 text-blue-950">
+              <Users className="w-4 h-4 text-blue-600" />
+              <label className="text-xs font-black uppercase tracking-wider">
+                Grupo Oficial de Boletas de WhatsApp
+              </label>
+            </div>
+            <p className="text-[11px] text-slate-600 font-medium">
+              Definí el número o código de grupo al que se enviarán todas las boletas de reparto.
+            </p>
+            <input
+              type="text"
+              value={boletasGroupPhone}
+              onChange={(e) => setBoletasGroupPhone(e.target.value)}
+              placeholder="Ej: 5491155550000 (dejar en blanco para elegir grupo en WhatsApp)"
+              className="w-full p-3 bg-white border border-blue-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
           <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-2">
             <div className="flex items-center space-x-2 text-emerald-950">
               <Zap className="w-4 h-4 text-emerald-600 fill-emerald-600" />

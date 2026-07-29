@@ -10,7 +10,20 @@ export type VisitFrequency = 'DIARIA' | 'SEMANAL' | 'BISEMANAL' | 'QUINCENAL';
 
 export type RiskLevel = 'BAJO' | 'MEDIO' | 'ALTO' | 'CRITICO';
 
-export type UserRole = 'DUENO' | 'ADMINISTRADOR' | 'REPARTIDOR' | 'COBRANZAS' | 'SOLO_LECTURA';
+export type UserRole = 'DUENO' | 'ADMINISTRADOR' | 'REPARTIDOR';
+
+export interface AppUser {
+  id: string;
+  nombre: string;
+  apellido: string;
+  username: string;
+  passwordHash: string;
+  role: UserRole;
+  activo: boolean;
+  createdAt: string;
+  lastAccessAt?: string;
+  updatedAt: string;
+}
 
 export type VisitResult =
   | 'COMPRO_MERCADERIA'

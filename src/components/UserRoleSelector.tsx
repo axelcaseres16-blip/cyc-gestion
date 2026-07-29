@@ -12,8 +12,6 @@ const ROLES_CONFIG: { id: UserRole; label: string; icon: any; color: string; bg:
   { id: 'DUENO', label: '👑 Dueño', icon: Shield, color: 'text-amber-400', bg: 'bg-amber-500/20' },
   { id: 'ADMINISTRADOR', label: '⚙️ Administrador', icon: UserCheck, color: 'text-blue-400', bg: 'bg-blue-500/20' },
   { id: 'REPARTIDOR', label: '🚚 Repartidor', icon: Truck, color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
-  { id: 'COBRANZAS', label: '💼 Cobranzas', icon: DollarSign, color: 'text-purple-400', bg: 'bg-purple-500/20' },
-  { id: 'SOLO_LECTURA', label: '👁️ Solo Lectura', icon: Eye, color: 'text-slate-400', bg: 'bg-slate-500/20' },
 ];
 
 export const UserRoleSelector: React.FC<UserRoleSelectorProps> = ({

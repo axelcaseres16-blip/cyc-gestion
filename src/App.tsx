@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CustomerWithBalance, Movement, Customer, CustomerVisit, WhatsAppTemplates } from './types';
+import { CustomerWithBalance, Movement, Customer, CustomerVisit, WhatsAppTemplates, AppUser } from './types';
 import { AlertCircle } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
@@ -15,7 +15,10 @@ import {
   addMovement,
   addVisit,
 } from './utils/storage';
+import { getCurrentUser, logoutUser } from './utils/userStorage';
 
+import { LoginScreen } from './components/LoginScreen';
+import { UserManagementScreen } from './components/UserManagementScreen';
 import { Navbar } from './components/Navbar';
 import { Navigation } from './components/Navigation';
 import { Dashboard } from './components/Dashboard';
@@ -39,8 +42,8 @@ import { ImageViewerModal } from './components/ImageViewerModal';
 import { OfflineSyncModal } from './components/OfflineSyncModal';
 
 export default function App() {
-  const [currentUserRole, setCurrentUserRole] = useState<string>('DUENO');
-  const [activeView, setActiveView] = useState<string>('finalizarventa'); // Defecto express para facil acceso
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(getCurrentUser());
+  const [activeView, setActiveView] = useState<string>('finalizarventa');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
   const [customers, setCustomers] = useState<CustomerWithBalance[]>([]);
@@ -85,20 +88,30 @@ export default function App() {
   };
 
   useEffect(() => {
-    refreshData();
-  }, []);
-
-  // Al cambiar el rol, redirigir suavemente a la pantalla óptima si corresponde
-  const handleRoleChange = (role: string) => {
-    setCurrentUserRole(role);
-    if (role === 'REPARTIDOR') {
-      setActiveView('finalizarventa');
-    } else if (role === 'COBRANZAS') {
-      setActiveView('cobranzas');
-    } else if (role === 'DUENO' || role === 'ADMINISTRADOR') {
-      setActiveView('dashboard');
+    if (currentUser) {
+      refreshData();
     }
+  }, [currentUser]);
+
+  const handleLogout = () => {
+    logoutUser();
+    setCurrentUser(null);
   };
+
+  if (!currentUser) {
+    return (
+      <LoginScreen
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          if (user.role === 'REPARTIDOR') {
+            setActiveView('finalizarventa');
+          } else {
+            setActiveView('dashboard');
+          }
+        }}
+      />
+    );
+  }
 
   // Handlers para abrir modales
   const handleOpenNewBoleta = (cust = undefined) => {
@@ -142,30 +155,30 @@ export default function App() {
     initialBalance: number = 0
   ) => {
     if (editingCustomer) {
-      updateCustomer(editingCustomer.id, custData, currentUserRole);
+      updateCustomer(editingCustomer.id, custData, currentUser.role);
     } else {
-      addCustomer(custData, initialBalance, currentUserRole);
+      addCustomer(custData, initialBalance, currentUser.role);
     }
     refreshData();
   };
 
   const handleSaveBoleta = (movData: Omit<Movement, 'id' | 'createdAt'>) => {
-    addMovement(movData, currentUserRole);
+    addMovement(movData, currentUser.role);
     refreshData();
   };
 
   const handleSavePago = (movData: Omit<Movement, 'id' | 'createdAt'>) => {
-    addMovement(movData, currentUserRole);
+    addMovement(movData, currentUser.role);
     refreshData();
   };
 
   const handleSaveAjuste = (movData: Omit<Movement, 'id' | 'createdAt'>) => {
-    addMovement(movData, currentUserRole);
+    addMovement(movData, currentUser.role);
     refreshData();
   };
 
   const handleSaveVisita = (visitData: Omit<CustomerVisit, 'id' | 'createdAt'>) => {
-    addVisit(visitData, currentUserRole);
+    addVisit(visitData, currentUser.role);
     refreshData();
   };
 
@@ -212,8 +225,8 @@ export default function App() {
         onOpenBackupModal={() => setIsBackupModalOpen(true)}
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
         onOpenSyncModal={() => setIsSyncModalOpen(true)}
-        currentUserRole={currentUserRole}
-        setCurrentUserRole={handleRoleChange}
+        currentUser={currentUser}
+        onLogout={handleLogout}
         totalDeudaGlobal={totalDeudaGlobal}
       />
 
@@ -222,7 +235,7 @@ export default function App() {
         activeView={activeView}
         setActiveView={setActiveView}
         onOpenNewCustomer={handleOpenNewCustomer}
-        currentUserRole={currentUserRole}
+        currentUserRole={currentUser.role}
         riskyCount={riskyCount}
       />
 
@@ -233,13 +246,17 @@ export default function App() {
             <FinalizarVentaScreen
               customers={customers}
               onSaleCompleted={refreshData}
-              currentUserRole={currentUserRole}
+              currentUser={currentUser}
               preselectedCustomer={preselectedCustomerForSale}
               onClearPreselectedCustomer={() => setPreselectedCustomerForSale(undefined)}
               onViewImage={(url, title) =>
                 setImageViewerData({ isOpen: true, imageUrl: url, title })
               }
             />
+          )}
+
+          {activeView === 'usuarios' && currentUser.role === 'DUENO' && (
+            <UserManagementScreen currentUser={currentUser} />
           )}
 
           {activeView === 'hoy' && (
@@ -252,11 +269,11 @@ export default function App() {
               onOpenRegistrarVisita={handleOpenRegistrarVisita}
               onSelectCustomer={handleSelectCustomer}
               onStartSale={handleStartSaleForCustomer}
-              currentUserRole={currentUserRole}
+              currentUserRole={currentUser.role}
             />
           )}
 
-          {activeView === 'dashboard' && (
+          {activeView === 'dashboard' && currentUser.role !== 'REPARTIDOR' && (
             <Dashboard
               customers={customers}
               movements={movements}
@@ -268,7 +285,7 @@ export default function App() {
             />
           )}
 
-          {activeView === 'cobranzas' && (
+          {activeView === 'cobranzas' && currentUser.role !== 'REPARTIDOR' && (
             <CobranzasScreen
               customers={customers}
               movements={movements}
@@ -295,7 +312,7 @@ export default function App() {
                 movements={movements}
                 visits={visits}
                 templates={templates}
-                currentUserRole={currentUserRole}
+                currentUserRole={currentUser.role}
                 onBack={() => setActiveView('clientes')}
                 onEditCustomer={handleEditCustomer}
                 onOpenNewBoleta={handleOpenNewBoleta}
@@ -325,7 +342,7 @@ export default function App() {
             )
           )}
 
-          {activeView === 'cuentacorriente' && (
+          {activeView === 'cuentacorriente' && currentUser.role !== 'REPARTIDOR' && (
             <CuentaCorrienteScreen
               movements={movements}
               customers={customers}
@@ -347,7 +364,7 @@ export default function App() {
             />
           )}
 
-          {activeView === 'auditoria' && (
+          {activeView === 'auditoria' && currentUser.role !== 'REPARTIDOR' && (
             <ActivityLogScreen
               logs={activityLogs}
               onSelectCustomer={handleSelectCustomer}
@@ -371,7 +388,7 @@ export default function App() {
         onSave={handleSaveBoleta}
         customers={customers}
         preselectedCustomerId={preselectedCustomerIdForModal}
-        currentUserRole={currentUserRole}
+        currentUserRole={currentUser.role}
       />
 
       <RegisterPagoModal
@@ -380,7 +397,7 @@ export default function App() {
         onSave={handleSavePago}
         customers={customers}
         preselectedCustomerId={preselectedCustomerIdForModal}
-        currentUserRole={currentUserRole}
+        currentUserRole={currentUser.role}
       />
 
       <RegisterAjusteModal
@@ -389,7 +406,7 @@ export default function App() {
         onSave={handleSaveAjuste}
         customers={customers}
         preselectedCustomerId={preselectedCustomerIdForModal}
-        currentUserRole={currentUserRole}
+        currentUserRole={currentUser.role}
       />
 
       <RegistrarVisitaModal
@@ -398,7 +415,7 @@ export default function App() {
         onSave={handleSaveVisita}
         customer={preselectedCustomerForVisita}
         customers={customers}
-        currentUserRole={currentUserRole}
+        currentUserRole={currentUser.role}
       />
 
       <SettingsModal

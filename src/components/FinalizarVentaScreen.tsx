@@ -3,17 +3,19 @@ import {
   CustomerWithBalance,
   PaymentStatus,
   PaymentMethod,
-  WhatsAppPostSaleBehavior,
+  AppUser,
 } from '../types';
 import {
   finalizeCompleteSaleTransaction,
-  getWhatsAppBehavior,
   isSimulatedOffline,
   saveSaleDraft,
   getSaleDraft,
   clearSaleDraft,
 } from '../utils/storage';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import {
+  getBoletasGroupPhone,
+} from '../utils/userStorage';
+import { formatCurrency, formatDate, cleanPhoneNumber } from '../utils/formatters';
 import {
   Search,
   CheckCircle2,
@@ -22,22 +24,19 @@ import {
   MessageSquare,
   AlertCircle,
   DollarSign,
-  UserCheck,
-  Building2,
   Sparkles,
   ArrowRight,
   RotateCcw,
-  ShieldCheck,
   Zap,
-  Clock,
   X,
   FileText,
+  Users,
 } from 'lucide-react';
 
 interface FinalizarVentaScreenProps {
   customers: CustomerWithBalance[];
   onSaleCompleted: () => void;
-  currentUserRole: string;
+  currentUser: AppUser;
   preselectedCustomer?: CustomerWithBalance;
   onClearPreselectedCustomer?: () => void;
   onViewImage?: (url: string, title: string) => void;
@@ -46,7 +45,7 @@ interface FinalizarVentaScreenProps {
 export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
   customers,
   onSaleCompleted,
-  currentUserRole,
+  currentUser,
   preselectedCustomer,
   onClearPreselectedCustomer,
   onViewImage,
@@ -67,12 +66,14 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
   const [fotoUrl, setFotoUrl] = useState<string>('');
   const [photoError, setPhotoError] = useState<boolean>(false);
 
-  // Modal de confirmación y WhatsApp post-venta
+  // Pantalla de confirmación tras finalizar venta
   const [lastSaleResult, setLastSaleResult] = useState<{
-    customerName: string;
-    whatsappUrl: string;
-    whatsappMessage: string;
+    customer: CustomerWithBalance;
+    montoTotal: number;
+    montoAbonado: number;
     nuevoSaldo: number;
+    boletaGroupUrl: string;
+    customerStatementUrl: string;
     isOffline: boolean;
   } | null>(null);
 
@@ -100,12 +101,11 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
       if (draft.montoAbonado) setMontoAbonado(draft.montoAbonado);
       if (draft.medioPago) setMedioPago(draft.medioPago);
       if (draft.fotoUrl) setFotoUrl(draft.fotoUrl);
-
       setRestoredDraftNotice(true);
     }
-  }, []);
+  }, [customers, preselectedCustomer]);
 
-  // Guardar borrador automáticamente ante cualquier cambio
+  // Guardar borrador automáticamente al cambiar valores
   useEffect(() => {
     if (selectedCustomer || montoTotal || fotoUrl) {
       saveSaleDraft({
@@ -119,33 +119,29 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
     }
   }, [selectedCustomer, montoTotal, estadoPago, montoAbonado, medioPago, fotoUrl]);
 
-  // Filtrado de clientes para el buscador ultra rápido
+  // Filtrar clientes
   const filteredCustomers = customers.filter((c) => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return true;
+    const q = searchQuery.toLowerCase();
     return (
-      (c.alias && c.alias.toLowerCase().includes(q)) ||
       c.nombre.toLowerCase().includes(q) ||
+      (c.alias && c.alias.toLowerCase().includes(q)) ||
       c.direccion.toLowerCase().includes(q) ||
-      c.localidad.toLowerCase().includes(q) ||
-      (c.zonaRuta && c.zonaRuta.toLowerCase().includes(q))
+      c.zonaRuta.toLowerCase().includes(q)
     );
   });
 
-  // Calculados automáticos
   const totalNum = parseFloat(montoTotal) || 0;
   const abonadoNum =
     estadoPago === 'EFECTIVO' || estadoPago === 'TRANSFERENCIA'
       ? totalNum
-      : estadoPago === 'DEBE'
-      ? 0
-      : parseFloat(montoAbonado) || 0;
+      : estadoPago === 'PARCIAL'
+      ? parseFloat(montoAbonado) || 0
+      : 0;
 
   const saldoRestante = Math.max(0, totalNum - abonadoNum);
-  const currentCustBalance = selectedCustomer ? selectedCustomer.saldoActual : 0;
-  const nuevoSaldoEstimado = currentCustBalance + saldoRestante;
+  const nuevoSaldoEstimado = (selectedCustomer?.saldoActual || 0) + saldoRestante;
 
-  // Manejador de foto capturada desde archivo / cámara
+  // Manejar captura de imagen
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -190,7 +186,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
       <rect x="60" y="670" width="220" height="60" fill="#ecfdf5" stroke="#059669" stroke-width="3" rx="8" transform="rotate(-4 170 700)"/>
       <text x="170" y="707" font-family="sans-serif" font-size="16" font-weight="black" fill="#047857" text-anchor="middle" transform="rotate(-4 170 700)">✓ CONFORME EN CAMIÓN</text>
 
-      <text x="430" y="740" font-family="sans-serif" font-size="12" font-weight="bold" fill="#64748b">Firmado Chofer: ${currentUserRole}</text>
+      <text x="430" y="740" font-family="sans-serif" font-size="12" font-weight="bold" fill="#64748b">Chofer: ${currentUser.nombre}</text>
     </svg>`;
 
     const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
@@ -198,7 +194,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
     setPhotoError(false);
   };
 
-  // Botón Principal: FINALIZAR VENTA
+  // Botón Único: FINALIZAR VENTA
   const handleFinalizarVenta = () => {
     if (!selectedCustomer) return;
 
@@ -213,6 +209,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
     }
 
     try {
+      const userLabel = `${currentUser.nombre} (${currentUser.role})`;
       const result = finalizeCompleteSaleTransaction({
         customer: selectedCustomer,
         montoTotal: totalNum,
@@ -220,24 +217,62 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
         montoAbonado: abonadoNum,
         medioPago: estadoPago === 'PARCIAL' ? medioPago : undefined,
         fotoUrl,
-        usuarioActual: `Repartidor (${currentUserRole})`,
+        usuarioActual: userLabel,
       });
 
-      const behavior = getWhatsAppBehavior();
+      // Construir URLs de WhatsApp específicas para el nuevo flujo
+      const fechaLegible = formatDate(new Date().toISOString());
+      
+      let estadoText = 'Debe';
+      if (estadoPago === 'EFECTIVO') estadoText = 'Pagó efectivo';
+      if (estadoPago === 'TRANSFERENCIA') estadoText = 'Pagó transferencia';
+      if (estadoPago === 'PARCIAL') estadoText = `Pago parcial (${formatCurrency(abonadoNum)})`;
 
+      // 1. URL para Grupo de Boletas
+      const boletasGroupPhone = getBoletasGroupPhone();
+      const cleanGroupPhone = cleanPhoneNumber(boletasGroupPhone);
+
+      let groupMsg = `📄 *NUEVA BOLETA REGISTRADA - C&C GESTIÓN*\n\n`;
+      groupMsg += `*Cliente:* ${selectedCustomer.alias || selectedCustomer.nombre}\n`;
+      groupMsg += `*Dirección:* ${selectedCustomer.direccion} (${selectedCustomer.localidad})\n`;
+      groupMsg += `*Fecha:* ${fechaLegible}\n`;
+      groupMsg += `*Estado Pago:* ${estadoText}\n`;
+      groupMsg += `*Monto Boleta:* ${formatCurrency(totalNum)}\n`;
+      if (abonadoNum > 0) {
+        groupMsg += `*Abonado en Mano:* ${formatCurrency(abonadoNum)}\n`;
+      }
+      groupMsg += `*Saldo Actualizado Cliente:* ${formatCurrency(result.nuevoSaldo)}\n`;
+      groupMsg += `*Registrado por:* ${currentUser.nombre}`;
+
+      const boletaGroupUrl = cleanGroupPhone
+        ? `https://wa.me/${cleanGroupPhone}?text=${encodeURIComponent(groupMsg)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(groupMsg)}`;
+
+      // 2. URL para Estado de Cuenta al Cliente
+      const cleanCustomerPhone = cleanPhoneNumber(selectedCustomer.telefono);
+      let customerMsg = `*C&C GESTIÓN - ESTADO DE CUENTA*\n\n`;
+      customerMsg += `Estimado/a *${selectedCustomer.alias || selectedCustomer.nombre}*,\n`;
+      customerMsg += `Le informamos que registramos su compra del día de hoy por *${formatCurrency(totalNum)}*.\n`;
+      if (abonadoNum > 0) {
+        customerMsg += `Pago registrado: *${formatCurrency(abonadoNum)}*\n`;
+      }
+      customerMsg += `Su saldo actualizado en cuenta corriente es: *${formatCurrency(result.nuevoSaldo)}*.\n\n`;
+      customerMsg += `¡Muchas gracias por su preferencia!`;
+
+      const customerStatementUrl = `https://wa.me/${cleanCustomerPhone}?text=${encodeURIComponent(customerMsg)}`;
+
+      // Guardar resultado para pantalla de confirmación
       setLastSaleResult({
-        customerName: selectedCustomer.alias || selectedCustomer.nombre,
-        whatsappUrl: result.whatsappUrl,
-        whatsappMessage: result.whatsappMessage,
+        customer: selectedCustomer,
+        montoTotal: totalNum,
+        montoAbonado: abonadoNum,
         nuevoSaldo: result.nuevoSaldo,
+        boletaGroupUrl,
+        customerStatementUrl,
         isOffline: result.isOffline,
       });
 
-      // Si la configuración es "ALWAYS_AUTO", abrir WhatsApp automáticamente
-      if (behavior === 'ALWAYS_AUTO' && !result.isOffline) {
-        window.open(result.whatsappUrl, '_blank');
-      }
-
+      // NO abrir WhatsApp automáticamente. Guardar datos y mostrar pantalla de confirmación.
       clearSaleDraft();
       setRestoredDraftNotice(false);
       onSaleCompleted();
@@ -246,7 +281,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
     }
   };
 
-  // Resetear para el siguiente cliente en Modo Reparto
+  // Botón Ir al Siguiente Cliente (pantalla de confirmación)
   const handleNextSale = () => {
     clearSaleDraft();
     setRestoredDraftNotice(false);
@@ -263,7 +298,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
 
   return (
     <div className="space-y-6 pb-24 md:pb-12 animate-fade-in">
-      {/* Dynamic Header Banner */}
+      {/* Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 rounded-3xl p-5 sm:p-6 text-white shadow-xl border border-blue-900/40">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-3.5">
@@ -282,15 +317,15 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                 )}
               </div>
               <h1 className="text-xl sm:text-2xl font-black text-white mt-0.5">
-                Pantalla Única "Finalizar Venta"
+                Registrar y Finalizar Venta
               </h1>
               <p className="text-xs text-slate-300 mt-0.5 font-medium">
-                Venta, cobro, foto de boleta, saldo y WhatsApp en 1 solo paso.
+                Captura de boleta obligatoria, actualización de saldo y boleta al grupo en 1 solo paso.
               </p>
             </div>
           </div>
 
-          {selectedCustomer && (
+          {selectedCustomer && !lastSaleResult && (
             <button
               onClick={() => setSelectedCustomer(null)}
               className="flex items-center space-x-1.5 self-start md:self-auto bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-extrabold px-3.5 py-2 rounded-xl border border-slate-700 transition"
@@ -302,8 +337,8 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
         </div>
       </div>
 
-      {/* Notice: Borrador Restaurado automáticamente */}
-      {restoredDraftNotice && (
+      {/* Notice: Borrador Restaurado */}
+      {restoredDraftNotice && !lastSaleResult && (
         <div className="bg-amber-50 border-2 border-amber-300 text-amber-900 rounded-2xl p-4 flex items-center justify-between shadow-xs animate-fade-in">
           <div className="flex items-center space-x-2.5">
             <Zap className="w-5 h-5 text-amber-600 fill-amber-500 shrink-0" />
@@ -320,10 +355,10 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
         </div>
       )}
 
-      {/* Main Two-Column Layout */}
+      {/* Flujo Principal */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* PASO 1: SELECCIONAR CLIENTE */}
-        {!selectedCustomer ? (
+        {!selectedCustomer && !lastSaleResult ? (
           <div className="lg:col-span-12 space-y-4">
             <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200">
               <div className="flex items-center justify-between mb-4">
@@ -361,7 +396,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                 )}
               </div>
 
-              {/* Grid de Clientes para Selección Express */}
+              {/* Grid de Clientes */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto pr-1">
                 {filteredCustomers.map((c) => {
                   const hasDebt = c.saldoActual > 0;
@@ -404,10 +439,10 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
               </div>
             </div>
           </div>
-        ) : (
-          /* PASO 2 a 5: OPERACIÓN COMPLETA DE VENTA */
+        ) : !lastSaleResult ? (
+          /* PASOS FORMULARIO DE VENTA */
           <>
-            {/* Columna Izquierda: Datos de la Venta y Estado de Pago */}
+            {/* Columna Izquierda: Datos de la Venta */}
             <div className="lg:col-span-7 space-y-5">
               {/* Card Cliente Seleccionado */}
               <div className="bg-white rounded-3xl p-5 shadow-sm border-2 border-blue-600 relative overflow-hidden">
@@ -416,24 +451,24 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                 </div>
                 <div className="flex items-center space-x-3">
                   <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 font-black flex items-center justify-center text-xl shrink-0">
-                    {(selectedCustomer.alias || selectedCustomer.nombre).charAt(0)}
+                    {(selectedCustomer!.alias || selectedCustomer!.nombre).charAt(0)}
                   </div>
                   <div>
                     <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
-                      {selectedCustomer.alias || selectedCustomer.nombre}
+                      {selectedCustomer!.alias || selectedCustomer!.nombre}
                     </h2>
                     <p className="text-xs text-slate-500 font-medium">
-                      📍 {selectedCustomer.direccion}, {selectedCustomer.localidad}
+                      📍 {selectedCustomer!.direccion}, {selectedCustomer!.localidad}
                     </p>
                     <div className="flex items-center space-x-3 mt-1 text-xs">
                       <span className="font-bold text-slate-700">
                         Saldo Actual:{' '}
                         <span
                           className={`font-black font-mono ${
-                            selectedCustomer.saldoActual > 0 ? 'text-red-600' : 'text-emerald-600'
+                            selectedCustomer!.saldoActual > 0 ? 'text-red-600' : 'text-emerald-600'
                           }`}
                         >
-                          {formatCurrency(selectedCustomer.saldoActual)}
+                          {formatCurrency(selectedCustomer!.saldoActual)}
                         </span>
                       </span>
                     </div>
@@ -465,7 +500,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                   />
                 </div>
 
-                {/* Botones de atajo rápido de montos */}
+                {/* Botones de atajo rápido */}
                 <div className="flex flex-wrap gap-2 pt-1">
                   {[50000, 100000, 200000, 500000].map((val) => (
                     <button
@@ -537,7 +572,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                   })}
                 </div>
 
-                {/* Si elige "Pago parcial", mostrar automáticamente Importe Abonado, Medio de Pago y Saldo Restante */}
+                {/* Si elige Pago Parcial */}
                 {estadoPago === 'PARCIAL' && (
                   <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl space-y-3 animate-fade-in">
                     <p className="text-xs font-black uppercase text-amber-900 tracking-wider">
@@ -576,7 +611,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                   </div>
                 )}
 
-                {/* Resumen de Cálculos Automáticos */}
+                {/* Resumen */}
                 {totalNum > 0 && (
                   <div className="p-4 bg-slate-900 text-white rounded-2xl space-y-2 font-mono">
                     <div className="flex justify-between text-xs text-slate-300">
@@ -600,9 +635,9 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
               </div>
             </div>
 
-            {/* Columna Derecha: Foto de Boleta Obligatoria y Botón "FINALIZAR VENTA" */}
+            {/* Columna Derecha: Foto Obligatoria y Un Solo Botón FINALIZAR VENTA */}
             <div className="lg:col-span-5 space-y-5">
-              {/* PASO 4: FOTO DE LA BOLETA (OBLIGATORIA) */}
+              {/* PASO 4: FOTO OBLIGATORIA */}
               <div
                 className={`bg-white rounded-3xl p-5 sm:p-6 shadow-sm border-2 transition-all space-y-4 ${
                   photoError ? 'border-red-500 bg-red-50/20 ring-4 ring-red-100' : 'border-slate-200'
@@ -624,15 +659,13 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                   )}
                 </div>
 
-                {/* Mensaje de aviso obligatorio */}
                 <div className="p-3 bg-red-50 border border-red-200 rounded-2xl flex items-start space-x-2 text-xs font-bold text-red-800">
                   <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                   <p className="leading-tight">
-                    Para finalizar la venta es obligatorio guardar una fotografía de la boleta.
+                    La fotografía de la boleta es obligatoria y quedará guardada y asociada al cliente y su historial.
                   </p>
                 </div>
 
-                {/* Contenedor de Vista Previa o Selector de Foto */}
                 {fotoUrl ? (
                   <div className="space-y-3">
                     <div className="relative rounded-2xl overflow-hidden border-2 border-slate-300 bg-slate-950 group h-56">
@@ -661,7 +694,6 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                   </div>
                 ) : (
                   <div className="space-y-2.5">
-                    {/* Botón Tomar Foto Cámara */}
                     <button
                       type="button"
                       onClick={() => cameraInputRef.current?.click()}
@@ -671,7 +703,6 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                       <span>Sacar Foto con Cámara</span>
                     </button>
 
-                    {/* Botón Elegir de Galería */}
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -681,7 +712,6 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                       <span>Elegir Foto de Galería</span>
                     </button>
 
-                    {/* Botón Muestra Digital Express */}
                     <button
                       type="button"
                       onClick={handleGenerateSampleBoletaPhoto}
@@ -710,7 +740,7 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                 />
               </div>
 
-              {/* PASO 5: BOTÓN PRINCIPAL "FINALIZAR VENTA" */}
+              {/* PASO 5: UN SOLO BOTÓN "FINALIZAR VENTA" */}
               <div className="space-y-3">
                 <button
                   type="button"
@@ -734,28 +764,42 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
               </div>
             </div>
           </>
-        )}
+        ) : null}
       </div>
 
-      {/* MODAL / BANNER DE CONFIRMACIÓN DE VENTA & INTEGRACIÓN AUTOMÁTICA CON WHATSAPP */}
+      {/* PANTALLA DE CONFIRMACIÓN SEGÚN ESPECIFICACIÓN */}
       {lastSaleResult && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden text-slate-900">
+            {/* Header Confirmación */}
             <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-6 text-center space-y-2">
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-1">
+              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-1 shadow-inner">
                 <CheckCircle2 className="w-10 h-10 text-white" />
               </div>
-              <h2 className="text-xl font-black">¡Venta Finalizada con Éxito!</h2>
+              <h2 className="text-2xl font-black tracking-tight">
+                ✓ Venta registrada correctamente.
+              </h2>
               <p className="text-xs text-emerald-100 font-medium">
-                Cliente: <span className="font-bold underline">{lastSaleResult.customerName}</span>
+                Cliente: <span className="font-bold underline">{lastSaleResult.customer.alias || lastSaleResult.customer.nombre}</span>
               </p>
             </div>
 
-            <div className="p-6 space-y-4">
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono space-y-1 text-slate-800">
-                <p className="font-bold text-slate-900 mb-1">📄 Mensaje preparado para WhatsApp:</p>
-                <div className="whitespace-pre-wrap bg-white p-3 rounded-xl border border-slate-200 text-[11px] text-slate-700">
-                  {lastSaleResult.whatsappMessage}
+            <div className="p-6 space-y-5">
+              {/* Detalle Resumen */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono space-y-2">
+                <div className="flex justify-between text-slate-600">
+                  <span>Importe Venta:</span>
+                  <span className="font-bold text-slate-900">{formatCurrency(lastSaleResult.montoTotal)}</span>
+                </div>
+                {lastSaleResult.montoAbonado > 0 && (
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Abonado en mano:</span>
+                    <span className="font-bold">{formatCurrency(lastSaleResult.montoAbonado)}</span>
+                  </div>
+                )}
+                <div className="pt-2 border-t border-slate-200 flex justify-between text-sm font-black text-slate-900">
+                  <span>Nuevo Saldo Cliente:</span>
+                  <span className="text-blue-700">{formatCurrency(lastSaleResult.nuevoSaldo)}</span>
                 </div>
               </div>
 
@@ -766,24 +810,37 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
                 </div>
               )}
 
-              <div className="space-y-2 pt-2">
+              {/* TRES BOTONES SOLICITADOS EXPRESAMENTE */}
+              <div className="space-y-3 pt-1">
+                {/* 1. Enviar boleta al grupo */}
                 <a
-                  href={lastSaleResult.whatsappUrl}
+                  href={lastSaleResult.boletaGroupUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl shadow-lg transition flex items-center justify-center space-x-2"
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-black text-sm rounded-2xl shadow-md transition flex items-center justify-center space-x-2.5"
                 >
-                  <MessageSquare className="w-5 h-5" />
-                  <span>Enviar por WhatsApp Ahora</span>
+                  <Camera className="w-5 h-5 text-emerald-200" />
+                  <span>📷 Enviar boleta al grupo</span>
                 </a>
 
+                {/* 2. Enviar estado de cuenta al cliente */}
+                <a
+                  href={lastSaleResult.customerStatementUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-black text-sm rounded-2xl shadow-md transition flex items-center justify-center space-x-2.5"
+                >
+                  <MessageSquare className="w-5 h-5 text-blue-200" />
+                  <span>💬 Enviar estado de cuenta al cliente</span>
+                </a>
+
+                {/* 3. Ir al siguiente cliente */}
                 <button
                   type="button"
                   onClick={handleNextSale}
-                  className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider rounded-2xl transition flex items-center justify-center space-x-2"
+                  className="w-full py-4 bg-slate-900 hover:bg-slate-800 active:scale-98 text-white font-black text-sm uppercase tracking-wider rounded-2xl transition flex items-center justify-center space-x-2 mt-2"
                 >
-                  <span>Siguiente Venta (&lt; Buscador)</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span>➡️ Ir al siguiente cliente</span>
                 </button>
               </div>
             </div>
