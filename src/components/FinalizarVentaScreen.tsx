@@ -9,6 +9,9 @@ import {
   finalizeCompleteSaleTransaction,
   getWhatsAppBehavior,
   isSimulatedOffline,
+  saveSaleDraft,
+  getSaleDraft,
+  clearSaleDraft,
 } from '../utils/storage';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import {
@@ -73,14 +76,48 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
     isOffline: boolean;
   } | null>(null);
 
+  // Aviso de borrador restaurado
+  const [restoredDraftNotice, setRestoredDraftNotice] = useState<boolean>(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  // Cargar borrador guardado al montar si no hay cliente preseleccionado
   useEffect(() => {
     if (preselectedCustomer) {
       setSelectedCustomer(preselectedCustomer);
+      return;
     }
-  }, [preselectedCustomer]);
+
+    const draft = getSaleDraft();
+    if (draft && (draft.customerId || draft.montoTotal || draft.fotoUrl)) {
+      if (draft.customerId) {
+        const found = customers.find((c) => c.id === draft.customerId);
+        if (found) setSelectedCustomer(found);
+      }
+      if (draft.montoTotal) setMontoTotal(draft.montoTotal);
+      if (draft.estadoPago) setEstadoPago(draft.estadoPago);
+      if (draft.montoAbonado) setMontoAbonado(draft.montoAbonado);
+      if (draft.medioPago) setMedioPago(draft.medioPago);
+      if (draft.fotoUrl) setFotoUrl(draft.fotoUrl);
+
+      setRestoredDraftNotice(true);
+    }
+  }, []);
+
+  // Guardar borrador automáticamente ante cualquier cambio
+  useEffect(() => {
+    if (selectedCustomer || montoTotal || fotoUrl) {
+      saveSaleDraft({
+        customerId: selectedCustomer?.id,
+        montoTotal,
+        estadoPago,
+        montoAbonado,
+        medioPago,
+        fotoUrl,
+      });
+    }
+  }, [selectedCustomer, montoTotal, estadoPago, montoAbonado, medioPago, fotoUrl]);
 
   // Filtrado de clientes para el buscador ultra rápido
   const filteredCustomers = customers.filter((c) => {
@@ -201,6 +238,8 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
         window.open(result.whatsappUrl, '_blank');
       }
 
+      clearSaleDraft();
+      setRestoredDraftNotice(false);
       onSaleCompleted();
     } catch (err: any) {
       alert(err.message || 'Error finalizando la venta.');
@@ -209,6 +248,8 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
 
   // Resetear para el siguiente cliente en Modo Reparto
   const handleNextSale = () => {
+    clearSaleDraft();
+    setRestoredDraftNotice(false);
     setSelectedCustomer(null);
     setSearchQuery('');
     setMontoTotal('');
@@ -260,6 +301,24 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
           )}
         </div>
       </div>
+
+      {/* Notice: Borrador Restaurado automáticamente */}
+      {restoredDraftNotice && (
+        <div className="bg-amber-50 border-2 border-amber-300 text-amber-900 rounded-2xl p-4 flex items-center justify-between shadow-xs animate-fade-in">
+          <div className="flex items-center space-x-2.5">
+            <Zap className="w-5 h-5 text-amber-600 fill-amber-500 shrink-0" />
+            <p className="text-xs sm:text-sm font-extrabold leading-tight">
+              ⚡ <span className="underline font-black">Cero pérdida de datos</span>: Se recuperó la venta en proceso que tenías abierta.
+            </p>
+          </div>
+          <button
+            onClick={() => setRestoredDraftNotice(false)}
+            className="text-amber-800 hover:text-amber-950 font-black text-xs px-2.5 py-1 rounded-lg bg-amber-200/60 transition"
+          >
+            Entendido
+          </button>
+        </div>
+      )}
 
       {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

@@ -25,6 +25,48 @@ const ACTIVITY_KEY = 'cyc_gestion_activity_v1';
 const PENDING_SALES_KEY = 'cyc_gestion_pending_sales_v1';
 const WA_BEHAVIOR_KEY = 'cyc_gestion_wa_behavior_v1';
 const SIMULATED_OFFLINE_KEY = 'cyc_gestion_simulated_offline_v1';
+const SALE_DRAFT_KEY = 'cyc_gestion_sale_draft_v1';
+
+export interface SaleDraftData {
+  customerId?: string;
+  montoTotal?: string;
+  estadoPago?: PaymentStatus;
+  montoAbonado?: string;
+  medioPago?: PaymentMethod;
+  fotoUrl?: string;
+  updatedAt?: string;
+}
+
+export function saveSaleDraft(draft: SaleDraftData): void {
+  try {
+    if (!draft.customerId && !draft.montoTotal && !draft.fotoUrl) {
+      localStorage.removeItem(SALE_DRAFT_KEY);
+      return;
+    }
+    const current = getSaleDraft() || {};
+    const updated = { ...current, ...draft, updatedAt: new Date().toISOString() };
+    localStorage.setItem(SALE_DRAFT_KEY, JSON.stringify(updated));
+  } catch (err) {
+    console.error('Error guardando borrador de venta:', err);
+  }
+}
+
+export function getSaleDraft(): SaleDraftData | null {
+  try {
+    const raw = localStorage.getItem(SALE_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+export function clearSaleDraft(): void {
+  try {
+    localStorage.removeItem(SALE_DRAFT_KEY);
+  } catch (err) {
+    console.error('Error limpiando borrador de venta:', err);
+  }
+}
 
 // Datos de demostración iniciales ultra realistas para C&C Gestión (Distribuidora de achuras y carnes)
 const MOCK_INITIAL_CUSTOMERS: Customer[] = [
