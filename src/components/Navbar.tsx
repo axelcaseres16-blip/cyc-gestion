@@ -11,7 +11,9 @@ import {
   Building2,
   ShieldAlert,
   Zap,
+  Smartphone,
 } from 'lucide-react';
+import { promptPwaInstall, checkIsStandalone } from '../utils/pwaManager';
 
 interface NavbarProps {
   activeView: string;
@@ -99,6 +101,24 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* Selector de Rol Personalizado */}
             <UserRoleSelector currentRole={currentUserRole} onRoleChange={setCurrentUserRole} />
+
+            {/* PWA Install Button */}
+            {!checkIsStandalone() && (
+              <button
+                id="btn-install-pwa-nav"
+                onClick={async () => {
+                  const installed = await promptPwaInstall();
+                  if (!installed) {
+                    window.dispatchEvent(new CustomEvent('open-pwa-modal'));
+                  }
+                }}
+                className="p-2 text-blue-300 hover:text-white bg-blue-900/40 hover:bg-blue-800/60 rounded-xl transition border border-blue-700/50 flex items-center space-x-1"
+                title="Instalar C&C en Pantalla Principal"
+              >
+                <Smartphone className="w-4.5 h-4.5 text-blue-400" />
+                <span className="text-[11px] font-bold hidden xl:inline">Instalar App</span>
+              </button>
+            )}
 
             {/* Plantillas WhatsApp Config */}
             <button

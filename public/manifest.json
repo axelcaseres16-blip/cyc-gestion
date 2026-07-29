@@ -1,0 +1,60 @@
+{
+  "id": "/",
+  "name": "C&C Gestión",
+  "short_name": "C&C",
+  "description": "Sistema de gestión integral para distribución, cuentas corrientes, cobranzas y boletas.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
+  "orientation": "any",
+  "theme_color": "#0f172a",
+  "background_color": "#ffffff",
+  "lang": "es-AR",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ruta de Hoy",
+      "short_name": "Ruta",
+      "description": "Ver hoja de ruta del repartidor",
+      "url": "/?view=hoy"
+    },
+    {
+      "name": "Cobranzas",
+      "short_name": "Cobranzas",
+      "description": "Gestión de cobros y deudores",
+      "url": "/?view=cobranzas"
+    },
+    {
+      "name": "Finalizar Venta",
+      "short_name": "Venta",
+      "description": "Registrar nueva venta",
+      "url": "/?view=finalizarventa"
+    }
+  ]
+}

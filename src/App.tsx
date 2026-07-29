@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CustomerWithBalance, Movement, Customer, CustomerVisit, WhatsAppTemplates } from './types';
 import { AlertCircle } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { PwaInstallBanner } from './components/PwaInstallBanner';
 import {
   getCustomersWithBalances,
   getStoredMovements,
@@ -198,6 +199,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
+      {/* PWA Install Banner & Offline Notification */}
+      <PwaInstallBanner />
+
       {/* Header Principal */}
       <Navbar
         activeView={activeView}
