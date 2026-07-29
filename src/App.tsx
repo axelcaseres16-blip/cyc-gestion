@@ -168,15 +168,22 @@ export default function App() {
     refreshData();
   };
 
-  const handleSelectCustomer = (param: CustomerWithBalance | string) => {
+  const handleSelectCustomer = (param: any) => {
     if (!param) return;
-    const id = typeof param === 'string' ? param : param.id;
+    let id: string | undefined = undefined;
+    if (typeof param === 'string') {
+      id = param;
+    } else if (typeof param === 'object') {
+      id = param.id || param.customerId;
+    }
     if (!id) return;
     setSelectedCustomerId(id);
     setActiveView('fichacliente');
   };
 
-  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
+  const selectedCustomer = customers.find(
+    (c) => c && String(c.id) === String(selectedCustomerId)
+  );
 
   // Cálculos rápidos para la barra de navegación
   const totalDeudaGlobal = customers.reduce((sum, c) => sum + Math.max(0, c.saldoActual), 0);
@@ -217,7 +224,7 @@ export default function App() {
 
       {/* Content Body Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        <ErrorBoundary onReset={() => setActiveView('finalizarventa')}>
+        <ErrorBoundary key={activeView} onReset={() => setActiveView('finalizarventa')}>
           {activeView === 'finalizarventa' && (
             <FinalizarVentaScreen
               customers={customers}

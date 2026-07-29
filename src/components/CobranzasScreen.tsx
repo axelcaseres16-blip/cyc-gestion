@@ -137,8 +137,9 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
         ) : (
           <div className="space-y-3">
             {routeDebtors.map((cust) => {
-              const isCritical = cust.evaluacionRiesgo.level === 'CRITICO';
-              const isHigh = cust.evaluacionRiesgo.level === 'ALTO';
+              const level = cust.evaluacionRiesgo?.level || (cust.evaluacionRiesgo as any)?.nivel;
+              const isCritical = level === 'CRITICO';
+              const isHigh = level === 'ALTO';
 
               return (
                 <div

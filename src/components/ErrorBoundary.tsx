@@ -57,13 +57,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
             <div className="space-y-2">
               <span className="text-[10px] font-black uppercase tracking-widest bg-red-100 text-red-800 px-3 py-1 rounded-full border border-red-200">
-                Sistema de Resiliencia
+                Resiliencia del Sistema
               </span>
               <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                No fue posible cargar la información del cliente
+                No fue posible cargar esta información.
               </h2>
               <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed">
-                Ocurrió un inconveniente temporal de renderizado. Tus datos cargados están protegidos y resguardados.
+                Ocurrió un inconveniente temporal de renderizado. Todos los datos están seguros y resguardados.
               </p>
             </div>
 

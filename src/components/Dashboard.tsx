@@ -54,13 +54,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const clientesConDeuda = filteredCustomers.filter((c) => c.saldoActual > 0);
 
   // Clientes riesgosos (CRITICO o ALTO)
-  const clientesRiesgosos = filteredCustomers.filter(
-    (c) => c.evaluacionRiesgo.level === 'CRITICO' || c.evaluacionRiesgo.level === 'ALTO'
-  );
+  const clientesRiesgosos = filteredCustomers.filter((c) => {
+    const level = c.evaluacionRiesgo?.level || (c.evaluacionRiesgo as any)?.nivel;
+    return level === 'CRITICO' || level === 'ALTO';
+  });
 
   // Clientes inactivos (+20 días sin comprar)
   const clientesInactivosSinComprar = filteredCustomers.filter(
-    (c) => c.saldoActual > 0 && c.evaluacionRiesgo.lastPurchaseDays > 20
+    (c) => c.saldoActual > 0 && (c.evaluacionRiesgo?.lastPurchaseDays ?? 0) > 20
   );
 
   // Cobranzas del día de hoy

@@ -52,11 +52,12 @@ export const CustomerList: React.FC<CustomerListProps> = ({
 
     const matchesRoute = selectedRoute === 'TODAS' || c.zonaRuta === selectedRoute;
     const matchesCategory = selectedCategory === 'TODAS' || c.categoria === selectedCategory;
+    const level = c.evaluacionRiesgo?.level || (c.evaluacionRiesgo as any)?.nivel;
     const matchesRisk =
       selectedRisk === 'TODOS' ||
-      (selectedRisk === 'RIESGO_ALTO' && (c.evaluacionRiesgo.level === 'CRITICO' || c.evaluacionRiesgo.level === 'ALTO')) ||
+      (selectedRisk === 'RIESGO_ALTO' && (level === 'CRITICO' || level === 'ALTO')) ||
       (selectedRisk === 'SOLO_DEUDORES' && c.saldoActual > 0) ||
-      c.evaluacionRiesgo.level === selectedRisk;
+      level === selectedRisk;
 
     return matchesSearch && matchesRoute && matchesCategory && matchesRisk;
   });
@@ -232,7 +233,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px] text-slate-500 font-semibold">
                         <span>Límite: {formatCurrency(cust.limiteCredito)}</span>
-                        <span>{cust.evaluacionRiesgo.creditUsagePercent}% uso</span>
+                        <span>{cust.evaluacionRiesgo?.creditUsagePercent ?? 0}% uso</span>
                       </div>
                       <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
                         <div
