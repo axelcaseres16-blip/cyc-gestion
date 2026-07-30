@@ -176,7 +176,7 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
   return (
     <div className="space-y-6 pb-12 animate-fade-in">
       {/* Header Banner */}
-      <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-slate-900 text-white rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center space-x-3.5">
           <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xl shrink-0 shadow-md">
             👑
@@ -193,15 +193,27 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
 
         <button
           onClick={handleOpenCreateModal}
-          className="py-3 px-5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg transition flex items-center justify-center space-x-2 shrink-0 cursor-pointer"
+          className="w-full sm:w-auto min-h-[48px] py-3 px-5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg transition flex items-center justify-center space-x-2 shrink-0 cursor-pointer active:scale-98"
         >
           <UserPlus className="w-4 h-4" />
           <span>Crear Nuevo Usuario</span>
         </button>
       </div>
 
+      {/* Floating Action Button for Mobile */}
+      <div className="fixed bottom-20 right-4 z-40 sm:hidden">
+        <button
+          onClick={handleOpenCreateModal}
+          className="bg-amber-500 text-slate-950 p-4 rounded-full shadow-2xl flex items-center justify-center space-x-2 font-black border-2 border-amber-300 active:scale-95"
+          title="Crear Nuevo Usuario"
+        >
+          <UserPlus className="w-6 h-6" />
+          <span className="text-xs font-black uppercase pr-1">Nuevo Usuario</span>
+        </button>
+      </div>
+
       {/* Control / Buscador */}
-      <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200 flex items-center justify-between gap-4">
+      <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="relative flex-1">
           <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
           <input
@@ -209,16 +221,82 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar por nombre, apellido o usuario..."
-            className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600"
+            className="w-full pl-11 pr-4 py-3 min-h-[48px] bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-600"
           />
         </div>
-        <span className="text-xs font-bold text-slate-500 shrink-0">
+        <span className="text-xs font-bold text-slate-500 shrink-0 self-end sm:self-center">
           {filteredUsers.length} usuario(s)
         </span>
       </div>
 
-      {/* Lista de Usuarios Tabla */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+      {/* Vista Móvil (Tarjetas) */}
+      <div className="block md:hidden space-y-3">
+        {filteredUsers.length === 0 ? (
+          <div className="bg-white rounded-2xl p-6 text-center text-slate-500 font-bold text-xs border border-slate-200">
+            No se encontraron usuarios
+          </div>
+        ) : (
+          filteredUsers.map((u) => (
+            <div
+              key={u.id}
+              className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-3"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">
+                    {u.nombre} {u.apellido}
+                  </h3>
+                  <p className="text-xs font-mono font-bold text-blue-600">
+                    @{u.username}
+                  </p>
+                </div>
+                <div className="shrink-0">{getRoleBadge(u.role)}</div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
+                <div>
+                  Estado:{' '}
+                  {u.activo ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      ✓ ACTIVO
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-800 border border-red-300">
+                      🔴 INACTIVO
+                    </span>
+                  )}
+                </div>
+                <div>Creado: <span className="font-mono">{formatDate(u.createdAt, true)}</span></div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                <button
+                  onClick={() => handleOpenEditModal(u)}
+                  className="flex-1 min-h-[44px] py-2 px-3 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-extrabold text-xs rounded-xl border border-slate-200 transition flex items-center justify-center space-x-1.5"
+                >
+                  <Edit2 className="w-4 h-4 text-blue-600" />
+                  <span>Editar</span>
+                </button>
+
+                <button
+                  onClick={() => handleToggleStatus(u)}
+                  disabled={u.id === currentUser.id}
+                  className={`flex-1 min-h-[44px] py-2 px-3 text-xs font-extrabold rounded-xl transition border flex items-center justify-center ${
+                    u.activo
+                      ? 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200'
+                      : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200'
+                  }`}
+                >
+                  {u.activo ? 'Desactivar' : 'Activar'}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Vista Escritorio (Tabla) */}
+      <div className="hidden md:block bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -270,7 +348,7 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
                   <td className="p-4 text-right space-x-2">
                     <button
                       onClick={() => handleOpenEditModal(u)}
-                      className="p-2 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 rounded-xl transition inline-flex items-center"
+                      className="p-2.5 min-h-[40px] min-w-[40px] text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 rounded-xl transition inline-flex items-center justify-center cursor-pointer"
                       title="Editar usuario"
                     >
                       <Edit2 className="w-4 h-4" />
@@ -279,7 +357,7 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
                     <button
                       onClick={() => handleToggleStatus(u)}
                       disabled={u.id === currentUser.id}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-xl transition ${
+                      className={`px-3 py-2 min-h-[40px] text-xs font-bold rounded-xl transition cursor-pointer ${
                         u.activo
                           ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
                           : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
@@ -297,9 +375,9 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
 
       {/* Modal Crear / Editar Usuario */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-md w-[95vw] sm:w-full my-auto shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col">
+            <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-2">
                 <Users className="w-5 h-5 text-amber-400" />
                 <h2 className="font-extrabold text-base">
@@ -308,13 +386,13 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white"
+                className="p-2 text-slate-400 hover:text-white rounded-xl min-h-[44px] min-w-[44px] flex items-center justify-center"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
               {formError && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-bold text-red-800 flex items-center space-x-2">
                   <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
@@ -329,7 +407,7 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">Nombre</label>
                   <input
@@ -338,7 +416,7 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
                     value={formNombre}
                     onChange={(e) => setFormNombre(e.target.value)}
                     placeholder="Ej: Martín"
-                    className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900"
+                    className="w-full p-3 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900"
                   />
                 </div>
                 <div>
@@ -349,7 +427,7 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
                     value={formApellido}
                     onChange={(e) => setFormApellido(e.target.value)}
                     placeholder="Ej: Gómez"
-                    className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900"
+                    className="w-full p-3 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900"
                   />
                 </div>
               </div>
@@ -364,7 +442,7 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
                   value={formUsername}
                   onChange={(e) => setFormUsername(e.target.value)}
                   placeholder="Ej: mgomez"
-                  className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900"
+                  className="w-full p-3 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900"
                 />
               </div>
 
@@ -378,7 +456,7 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
                   value={formPassword}
                   onChange={(e) => setFormPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900"
+                  className="w-full p-3 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900"
                 />
               </div>
 
@@ -387,7 +465,7 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
                 <select
                   value={formRole}
                   onChange={(e) => setFormRole(e.target.value as UserRole)}
-                  className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900"
+                  className="w-full p-3 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900"
                 >
                   <option value="REPARTIDOR">🚚 Repartidor (Interfaz Simplificada)</option>
                   <option value="ADMINISTRADOR">🛠️ Administrador (Operación Diaria Total)</option>
@@ -395,30 +473,30 @@ export const UserManagementScreen: React.FC<UserManagementScreenProps> = ({ curr
                 </select>
               </div>
 
-              <div className="flex items-center space-x-2 pt-2">
+              <div className="flex items-center space-x-2 pt-2 min-h-[44px]">
                 <input
                   type="checkbox"
                   id="activo"
                   checked={formActivo}
                   onChange={(e) => setFormActivo(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded"
+                  className="w-5 h-5 text-blue-600 rounded"
                 />
                 <label htmlFor="activo" className="text-xs font-bold text-slate-800 cursor-pointer">
                   Usuario Activo (Permitir inicio de sesión)
                 </label>
               </div>
 
-              <div className="pt-3 flex space-x-2">
+              <div className="pt-3 flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+                  className="w-full sm:flex-1 py-3 min-h-[48px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition"
+                  className="w-full sm:flex-1 py-3 min-h-[48px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition"
                 >
                   {editingUser ? 'Guardar Cambios' : 'Crear Usuario'}
                 </button>

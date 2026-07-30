@@ -59,20 +59,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden my-8 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-lg w-[95vw] sm:w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92dvh] flex flex-col">
         {/* Header */}
-        <div className="bg-slate-900 text-white p-5 flex items-center justify-between shrink-0">
+        <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-2">
             <MessageSquare className="w-5 h-5 text-emerald-400" />
-            <h2 className="font-bold text-lg">Configuración de WhatsApp & Reparto</h2>
+            <h2 className="font-bold text-base sm:text-lg">Configuración de WhatsApp & Reparto</h2>
           </div>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white transition">
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-white transition min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSave} className="p-6 space-y-5 overflow-y-auto">
+        <form onSubmit={handleSave} className="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1">
           {savedMsg && (
             <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />

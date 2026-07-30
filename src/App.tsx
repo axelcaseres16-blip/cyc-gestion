@@ -21,6 +21,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { UserManagementScreen } from './components/UserManagementScreen';
 import { Navbar } from './components/Navbar';
 import { Navigation } from './components/Navigation';
+import { SidebarDesktop } from './components/SidebarDesktop';
 import { Dashboard } from './components/Dashboard';
 import { CustomerList } from './components/CustomerList';
 import { CustomerDetail } from './components/CustomerDetail';
@@ -30,6 +31,11 @@ import { CuentaCorrienteScreen } from './components/CuentaCorrienteScreen';
 import { HoyRepartidorScreen } from './components/HoyRepartidorScreen';
 import { ActivityLogScreen } from './components/ActivityLogScreen';
 import { FinalizarVentaScreen } from './components/FinalizarVentaScreen';
+import { SystemAuditScreen } from './components/SystemAuditScreen';
+import { DriverPanelScreen } from './components/DriverPanelScreen';
+import { AlertCenterScreen } from './components/AlertCenterScreen';
+import { ShiftStateScreen } from './components/ShiftStateScreen';
+import { AnulacionModal } from './components/AnulacionModal';
 
 import { CustomerModal } from './components/CustomerModal';
 import { RegisterBoletaModal } from './components/RegisterBoletaModal';
@@ -67,6 +73,7 @@ export default function App() {
   const [preselectedCustomerForSale, setPreselectedCustomerForSale] = useState<CustomerWithBalance | undefined>(undefined);
 
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
+  const [movementToAnular, setMovementToAnular] = useState<Movement | null>(null);
 
   const [imageViewerData, setImageViewerData] = useState<{
     isOpen: boolean;
@@ -92,6 +99,32 @@ export default function App() {
       refreshData();
     }
   }, [currentUser]);
+
+  // Diagnostic tool to detect horizontal overflow in development
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      const checkOverflow = () => {
+        const vw = window.innerWidth;
+        const allElements = document.querySelectorAll('*');
+        allElements.forEach((el) => {
+          const rect = el.getBoundingClientRect();
+          if (rect.right > vw + 2) {
+            console.warn('[Overflow Detected]', el, {
+              right: rect.right,
+              viewportWidth: vw,
+              className: el.className,
+            });
+          }
+        });
+      };
+      window.addEventListener('resize', checkOverflow);
+      const timer = setTimeout(checkOverflow, 1500);
+      return () => {
+        window.removeEventListener('resize', checkOverflow);
+        clearTimeout(timer);
+      };
+    }
+  }, [activeView]);
 
   const handleLogout = () => {
     logoutUser();
@@ -211,36 +244,48 @@ export default function App() {
   const reminders = getSmartReminders(customers, movements, visits);
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
+    <div className="min-h-[100dvh] w-full max-w-full bg-slate-100 text-slate-900 flex flex-col md:flex-row font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden">
       {/* PWA Install Banner & Offline Notification */}
       <PwaInstallBanner />
 
-      {/* Header Principal */}
-      <Navbar
-        activeView={activeView}
-        setActiveView={setActiveView}
-        onOpenNewBoleta={handleOpenNewBoleta}
-        onOpenNewPago={handleOpenNewPago}
-        onOpenNewCustomer={handleOpenNewCustomer}
-        onOpenBackupModal={() => setIsBackupModalOpen(true)}
-        onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
-        onOpenSyncModal={() => setIsSyncModalOpen(true)}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        totalDeudaGlobal={totalDeudaGlobal}
-      />
-
-      {/* Navegación por Pestañas Adaptativa */}
-      <Navigation
+      {/* Sidebar de Escritorio (Exclusivo 1024px+ / md+) */}
+      <SidebarDesktop
         activeView={activeView}
         setActiveView={setActiveView}
         onOpenNewCustomer={handleOpenNewCustomer}
         currentUserRole={currentUser.role}
         riskyCount={riskyCount}
+        totalDeudaGlobal={totalDeudaGlobal}
       />
 
-      {/* Content Body Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      {/* Contenedor Principal (Header + Vistas) */}
+      <div className="flex-1 flex flex-col min-w-0 w-full min-h-[100dvh]">
+        {/* Header Principal */}
+        <Navbar
+          activeView={activeView}
+          setActiveView={setActiveView}
+          onOpenNewBoleta={handleOpenNewBoleta}
+          onOpenNewPago={handleOpenNewPago}
+          onOpenNewCustomer={handleOpenNewCustomer}
+          onOpenBackupModal={() => setIsBackupModalOpen(true)}
+          onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+          onOpenSyncModal={() => setIsSyncModalOpen(true)}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          totalDeudaGlobal={totalDeudaGlobal}
+        />
+
+        {/* Navegación Móvil (Bottom Bar & Drawer) */}
+        <Navigation
+          activeView={activeView}
+          setActiveView={setActiveView}
+          onOpenNewCustomer={handleOpenNewCustomer}
+          currentUserRole={currentUser.role}
+          riskyCount={riskyCount}
+        />
+
+        {/* Content Body Container */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-6 pb-20 md:pb-8 overflow-x-hidden">
         <ErrorBoundary key={activeView} onReset={() => setActiveView('finalizarventa')}>
           {activeView === 'finalizarventa' && (
             <FinalizarVentaScreen
@@ -252,6 +297,36 @@ export default function App() {
               onViewImage={(url, title) =>
                 setImageViewerData({ isOpen: true, imageUrl: url, title })
               }
+            />
+          )}
+
+          {activeView === 'repartidorpanel' && (
+            <DriverPanelScreen
+              currentUser={currentUser}
+              customers={customers}
+              movements={movements}
+              onNavigateTo={(view) => setActiveView(view)}
+              onStartSale={(cust) => handleStartSaleForCustomer(cust || customers[0])}
+              onOpenNewPago={() => handleOpenNewPago()}
+            />
+          )}
+
+          {activeView === 'estadoreparto' && (
+            <ShiftStateScreen
+              currentUser={currentUser}
+              customers={customers}
+              movements={movements}
+              visits={visits}
+              onRefreshData={refreshData}
+            />
+          )}
+
+          {activeView === 'alertas' && (
+            <AlertCenterScreen
+              customers={customers}
+              movements={movements}
+              onSelectCustomer={(cust) => handleSelectCustomer(cust.id)}
+              onNavigateTo={(view) => setActiveView(view)}
             />
           )}
 
@@ -275,6 +350,7 @@ export default function App() {
 
           {activeView === 'dashboard' && currentUser.role !== 'REPARTIDOR' && (
             <Dashboard
+              currentUser={currentUser}
               customers={customers}
               movements={movements}
               onSelectCustomer={handleSelectCustomer}
@@ -346,10 +422,12 @@ export default function App() {
             <CuentaCorrienteScreen
               movements={movements}
               customers={customers}
+              currentUserRole={currentUser.role}
               onSelectCustomer={handleSelectCustomer}
               onViewImage={(url, title) =>
                 setImageViewerData({ isOpen: true, imageUrl: url, title })
               }
+              onOpenAnularModal={(mov) => setMovementToAnular(mov)}
             />
           )}
 
@@ -365,10 +443,7 @@ export default function App() {
           )}
 
           {activeView === 'auditoria' && currentUser.role !== 'REPARTIDOR' && (
-            <ActivityLogScreen
-              logs={activityLogs}
-              onSelectCustomer={handleSelectCustomer}
-            />
+            <SystemAuditScreen currentUser={currentUser} />
           )}
         </ErrorBoundary>
       </main>
@@ -445,6 +520,21 @@ export default function App() {
         title={imageViewerData.title}
         onClose={() => setImageViewerData({ isOpen: false, imageUrl: '', title: '' })}
       />
+
+      <AnulacionModal
+        isOpen={!!movementToAnular}
+        onClose={() => setMovementToAnular(null)}
+        movement={movementToAnular}
+        customerName={
+          movementToAnular
+            ? customers.find((c) => c.id === movementToAnular.customerId)?.alias ||
+              customers.find((c) => c.id === movementToAnular.customerId)?.nombre
+            : undefined
+        }
+        currentUser={currentUser}
+        onSuccess={refreshData}
+      />
+      </div>
     </div>
   );
 }

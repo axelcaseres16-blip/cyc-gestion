@@ -189,17 +189,17 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 border-t border-slate-100 pt-3">
                     <button
                       onClick={() => onOpenNewPago(cust.id)}
-                      className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-2xs flex items-center justify-center space-x-1.5 active:scale-95 transition"
+                      className="min-h-[48px] py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-xs flex items-center justify-center space-x-1.5 active:scale-95 transition cursor-pointer"
                     >
-                      <DollarSign className="w-4 h-4" />
+                      <DollarSign className="w-4.5 h-4.5" />
                       <span>Cobrar Ahora</span>
                     </button>
 
                     <button
                       onClick={() => onOpenNewBoleta(cust.id)}
-                      className="py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-2xs flex items-center justify-center space-x-1.5 active:scale-95 transition"
+                      className="min-h-[48px] py-2.5 px-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black rounded-xl shadow-xs flex items-center justify-center space-x-1.5 active:scale-95 transition cursor-pointer"
                     >
-                      <FileText className="w-4 h-4" />
+                      <FileText className="w-4.5 h-4.5" />
                       <span>+ Boleta</span>
                     </button>
 
@@ -207,15 +207,15 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
                       href={buildWhatsAppDebtMessageUrl(cust)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 flex items-center justify-center space-x-1.5 transition"
+                      className="min-h-[48px] py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 flex items-center justify-center space-x-1.5 transition active:scale-95"
                     >
-                      <MessageSquare className="w-4 h-4 text-emerald-600" />
+                      <MessageSquare className="w-4.5 h-4.5 text-emerald-600" />
                       <span>WhatsApp</span>
                     </a>
 
                     <button
                       onClick={() => onSelectCustomer(cust.id)}
-                      className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl border border-slate-300 flex items-center justify-center space-x-1 transition"
+                      className="min-h-[48px] py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl border border-slate-300 flex items-center justify-center space-x-1 transition active:scale-95 cursor-pointer"
                     >
                       <span>Ver Ficha</span>
                       <ChevronRight className="w-4 h-4" />

@@ -13,9 +13,11 @@ import {
   PaymentStatus,
   PendingSale,
   PaymentMethod,
+  AppUser,
 } from '../types';
 import { calculateCustomerRisk } from './riskCalculator';
 import { DEFAULT_WHATSAPP_TEMPLATES, formatDate, formatCurrency, VISIT_RESULT_LABELS, cleanPhoneNumber } from './formatters';
+import { recordAuditLog } from './auditLogger';
 
 const CUSTOMERS_KEY = 'cyc_gestion_customers_v2';
 const MOVEMENTS_KEY = 'cyc_gestion_movements_v2';
@@ -26,6 +28,42 @@ const PENDING_SALES_KEY = 'cyc_gestion_pending_sales_v1';
 const WA_BEHAVIOR_KEY = 'cyc_gestion_wa_behavior_v1';
 const SIMULATED_OFFLINE_KEY = 'cyc_gestion_simulated_offline_v1';
 const SALE_DRAFT_KEY = 'cyc_gestion_sale_draft_v1';
+const AUTO_BACKUP_SNAPSHOT_KEY = 'cyc_auto_backup_snapshots_v1';
+
+/**
+ * Guarda un respaldo snapshot automático e inmediato en localStorage
+ */
+export function autoSaveSnapshot(): void {
+  try {
+    const snapshot = {
+      timestamp: new Date().toISOString(),
+      customers: getStoredCustomers(),
+      movements: getStoredMovements(),
+      visits: getStoredVisits(),
+    };
+    localStorage.setItem(AUTO_BACKUP_SNAPSHOT_KEY, JSON.stringify(snapshot));
+  } catch (err) {
+    console.error('Error al guardar snapshot automático:', err);
+  }
+}
+
+/**
+ * Obtiene el último snapshot guardado automáticamente
+ */
+export function getLastAutoSnapshot(): { timestamp: string; customersCount: number; movementsCount: number } | null {
+  try {
+    const raw = localStorage.getItem(AUTO_BACKUP_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return {
+      timestamp: data.timestamp || new Date().toISOString(),
+      customersCount: Array.isArray(data.customers) ? data.customers.length : 0,
+      movementsCount: Array.isArray(data.movements) ? data.movements.length : 0,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export interface SaleDraftData {
   customerId?: string;
@@ -973,7 +1011,98 @@ export function addMovement(
     custName
   );
 
+  recordAuditLog({
+    usuario: usuarioActual,
+    rol: 'ADMINISTRADOR',
+    accion: verb,
+    tipoAccion: newMov.tipo === 'BOLETA' ? 'VENTA' : newMov.tipo === 'PAGO' ? 'PAGO' : 'AJUSTE',
+    customerId: newMov.customerId,
+    customerName: custName,
+    detalles: `Monto: ${formatCurrency(newMov.monto)}. Desc: ${newMov.descripcion}`,
+  });
+
+  autoSaveSnapshot();
+
   return newMov;
+}
+
+/**
+ * ANULACIÓN SEGURA E INMUTABLE
+ * Nunca elimina un movimiento histórico. Genera un movimiento inverso y registra auditoría.
+ */
+export function anularMovement(
+  movementId: string,
+  user: AppUser,
+  motivo: string
+): Movement {
+  const movements = getStoredMovements();
+  const index = movements.findIndex((m) => m.id === movementId);
+
+  if (index === -1) {
+    throw new Error('El movimiento especificado no existe.');
+  }
+
+  const target = movements[index];
+  if (target.isAnulado) {
+    throw new Error('El movimiento ya se encuentra anulado.');
+  }
+
+  const nowIso = new Date().toISOString();
+
+  // 1. Marcar movimiento original como anulado
+  movements[index] = {
+    ...target,
+    isAnulado: true,
+    anuladoPor: `${user.nombre} (${user.role})`,
+    anuladoAt: nowIso,
+    motivoAnulacion: motivo,
+  };
+
+  // 2. Crear movimiento inverso compensatorio
+  const reversalMov: Movement = {
+    id: 'mov_rev_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+    customerId: target.customerId,
+    tipo: 'AJUSTE',
+    fecha: nowIso,
+    monto: target.monto,
+    esDebito: !target.esDebito, // Invertir efecto contable
+    descripcion: `ANULACIÓN REVERTIDA: ${target.tipo} (${target.numeroBoleta || 'S/N'}). Motivo: ${motivo}`,
+    registradoPor: `${user.nombre} (${user.role})`,
+    createdAt: nowIso,
+  };
+
+  movements.unshift(reversalMov);
+  saveMovements(movements);
+
+  const customers = getStoredCustomers();
+  const cust = customers.find((c) => c.id === target.customerId);
+  const custName = cust ? cust.alias || cust.nombre : 'Cliente';
+
+  // 3. Registrar en Auditoría e Historial
+  addActivityLog(
+    user.nombre,
+    `ANULÓ el movimiento N° ${target.numeroBoleta || target.id} de ${custName}`,
+    'AJUSTE',
+    target.customerId,
+    custName,
+    `Motivo: ${motivo}`
+  );
+
+  recordAuditLog({
+    usuario: user.nombre,
+    username: user.username,
+    rol: user.role,
+    accion: `Anuló ${target.tipo} N° ${target.numeroBoleta || target.id}`,
+    tipoAccion: 'ANULACION',
+    customerId: target.customerId,
+    customerName: custName,
+    resultado: 'EXITO',
+    detalles: `Reversión contable generada. Motivo: ${motivo}`,
+  });
+
+  autoSaveSnapshot();
+
+  return reversalMov;
 }
 
 export function addVisit(

@@ -8,6 +8,8 @@ interface CuentaCorrienteScreenProps {
   customers: CustomerWithBalance[];
   onSelectCustomer: (customerId: string) => void;
   onViewImage: (imageUrl: string, title: string) => void;
+  currentUserRole?: string;
+  onOpenAnularModal?: (mov: Movement) => void;
 }
 
 export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
@@ -15,6 +17,8 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
   customers,
   onSelectCustomer,
   onViewImage,
+  currentUserRole,
+  onOpenAnularModal,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTipo, setSelectedTipo] = useState('TODOS');
@@ -168,19 +172,25 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
             return (
               <div
                 key={mov.id}
-                className="p-4 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-3"
+                className={`p-4 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                  mov.isAnulado ? 'bg-red-50/40 opacity-75' : ''
+                }`}
               >
                 <div className="flex items-start space-x-3">
                   <div
                     className={`p-2.5 rounded-xl text-xs font-bold shrink-0 mt-0.5 ${
-                      isDebito ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+                      mov.isAnulado
+                        ? 'bg-slate-200 text-slate-500 line-through'
+                        : isDebito
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-emerald-100 text-emerald-700'
                     }`}
                   >
                     {isDebito ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownLeft className="w-4 h-4" />}
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-wrap gap-1">
                       <span
                         className="font-extrabold text-sm text-slate-900 hover:text-blue-600 transition cursor-pointer"
                         onClick={() => cust && onSelectCustomer(cust.id)}
@@ -190,35 +200,59 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
                         {mov.tipo}
                       </span>
+                      {mov.isAnulado && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-red-600 text-white shadow-2xs">
+                          🚨 ANULADO
+                        </span>
+                      )}
                       <span className="text-xs text-slate-500">{formatDate(mov.fecha, true)}</span>
                     </div>
 
-                    <p className="text-xs text-slate-600 font-medium">
+                    <p className={`text-xs font-medium ${mov.isAnulado ? 'line-through text-slate-400' : 'text-slate-600'}`}>
                       {mov.tipo === 'BOLETA' ? `Boleta N° ${mov.numeroBoleta}` : mov.descripcion}
                     </p>
 
-                    <div className="flex items-center space-x-3 text-[11px] text-slate-400">
+                    <div className="flex items-center space-x-3 text-[11px] text-slate-400 flex-wrap">
                       <span>Registrado por: <strong>{mov.registradoPor}</strong></span>
+                      {mov.isAnulado && (
+                        <span className="text-red-600 font-bold">
+                          Anulado por: {mov.anuladoPor} ({mov.motivoAnulacion})
+                        </span>
+                      )}
                       {mov.comprobantePago && <span>Ref: {mov.comprobantePago}</span>}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between md:justify-end space-x-4 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                <div className="flex items-center justify-between md:justify-end space-x-3 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
                   {mov.fotoUrl && (
                     <button
                       onClick={() => onViewImage(mov.fotoUrl!, `Boleta ${mov.numeroBoleta || ''}`)}
                       className="flex items-center space-x-1 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-300 transition"
                     >
                       <Camera className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Ver Foto</span>
+                      <span>Foto</span>
+                    </button>
+                  )}
+
+                  {!mov.isAnulado && currentUserRole !== 'REPARTIDOR' && onOpenAnularModal && (
+                    <button
+                      onClick={() => onOpenAnularModal(mov)}
+                      className="text-[11px] font-extrabold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 px-2.5 py-1.5 rounded-lg transition active:scale-95 cursor-pointer"
+                      title="Anular movimiento (Proceso seguro inmutable)"
+                    >
+                      Anular
                     </button>
                   )}
 
                   <div className="text-right">
                     <span
                       className={`text-base font-black font-mono ${
-                        isDebito ? 'text-red-600' : 'text-emerald-600'
+                        mov.isAnulado
+                          ? 'line-through text-slate-400'
+                          : isDebito
+                          ? 'text-red-600'
+                          : 'text-emerald-600'
                       }`}
                     >
                       {isDebito ? '+' : '-'}{formatCurrency(mov.monto)}

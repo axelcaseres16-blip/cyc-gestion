@@ -21,9 +21,9 @@ export function calculateCustomerRisk(
   totalBoletasHistorico: number;
   totalPagosHistorico: number;
 } {
-  // Ordenar movimientos por fecha ascendente
+  // Ordenar movimientos por fecha ascendente (excluyendo movimientos anulados)
   const customerMovements = movements
-    .filter((m) => m.customerId === customer.id)
+    .filter((m) => m.customerId === customer.id && !m.isAnulado)
     .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
 
   let saldoActual = 0;

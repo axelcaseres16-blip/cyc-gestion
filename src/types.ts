@@ -129,6 +129,11 @@ export interface Movement {
   descripcion: string;
   registradoPor: string;
   createdAt: string;
+  isAnulado?: boolean;
+  anuladoPor?: string;
+  anuladoAt?: string;
+  motivoAnulacion?: string;
+  movimientoInversoId?: string;
 }
 
 export interface CustomerWithBalance extends Customer {

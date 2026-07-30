@@ -102,23 +102,26 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden my-8">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl max-w-2xl w-[95vw] sm:w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col">
         {/* Encabezado */}
-        <div className="bg-[#0F172A] text-white px-6 py-4 flex items-center justify-between">
+        <div className="bg-[#0F172A] text-white px-4 sm:px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-2">
             <Building2 className="w-5 h-5 text-blue-400" />
-            <h2 className="font-bold text-lg">
+            <h2 className="font-bold text-base sm:text-lg">
               {initialCustomer ? 'Editar Ficha de Cliente' : 'Registrar Nuevo Cliente'}
             </h2>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 transition">
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-white p-2 rounded-xl min-h-[44px] min-w-[44px] flex items-center justify-center transition"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Alias / Fantasía */}
             <div className="sm:col-span-2">
@@ -131,7 +134,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 value={alias}
                 onChange={(e) => setAlias(e.target.value)}
                 placeholder="Ej: Carnicería Don Juan"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -146,7 +149,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 placeholder="Ej: Juan Carlos Rodríguez"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -158,7 +161,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 value={cuitDni}
                 onChange={(e) => setCuitDni(e.target.value)}
                 placeholder="20-28492019-3"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -172,7 +175,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 value={telefono}
                 onChange={(e) => setTelefono(e.target.value)}
                 placeholder="Ej: 1154839201"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -182,7 +185,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
               <select
                 value={categoria}
                 onChange={(e) => setCategoria(e.target.value as CustomerCategory)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500"
               >
                 <option value="CARNICERIA">Carnicería</option>
                 <option value="FIAMBRERIA">Fiambrería / Chacinados</option>
@@ -200,7 +203,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 value={direccion}
                 onChange={(e) => setDireccion(e.target.value)}
                 placeholder="Ej: Av. San Martín 1420"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -212,7 +215,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 value={localidad}
                 onChange={(e) => setLocalidad(e.target.value)}
                 placeholder="Ej: Morón"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -226,7 +229,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 value={referenciaUbicacion}
                 onChange={(e) => setReferenciaUbicacion(e.target.value)}
                 placeholder="Ej: Esquina Belgrano, persiana verde. Recibe de 7 a 10 hs."
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -236,7 +239,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
               <select
                 value={zonaRuta}
                 onChange={(e) => setZonaRuta(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500"
               >
                 {availableRoutes.map((r) => (
                   <option key={r} value={r}>
@@ -256,7 +259,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                   value={nuevaRutaCustom}
                   onChange={(e) => setNuevaRutaCustom(e.target.value)}
                   placeholder="Ej: Ruta 3 - Merlo / Castelar"
-                  className="w-full px-3 py-2 bg-blue-50 border border-blue-300 rounded-xl text-sm font-bold text-slate-900"
+                  className="w-full px-3 py-2 min-h-[48px] bg-blue-50 border border-blue-300 rounded-xl text-sm font-bold text-slate-900"
                 />
               </div>
             )}
@@ -267,7 +270,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
               <select
                 value={frecuenciaVisita}
                 onChange={(e) => setFrecuenciaVisita(e.target.value as VisitFrequency)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500"
               >
                 <option value="DIARIA">Diaria</option>
                 <option value="SEMANAL">Semanal</option>
@@ -284,7 +287,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 value={limiteCredito}
                 onChange={(e) => setLimiteCredito(Number(e.target.value))}
                 placeholder="1000000"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono font-bold text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono font-bold text-slate-900 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -296,13 +299,13 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 value={diasTopeCredito}
                 onChange={(e) => setDiasTopeCredito(Number(e.target.value))}
                 placeholder="14"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             {/* Saldo Inicial (Solo al crear) */}
             {!initialCustomer && (
-              <div className="sm:col-span-2 bg-amber-50 p-3 rounded-xl border border-amber-200">
+              <div className="sm:col-span-2 bg-amber-50 p-3.5 rounded-xl border border-amber-200">
                 <label className="block text-xs font-bold text-amber-900 uppercase mb-1">
                   Saldo Inicial al momento de alta ($ ARS)
                 </label>
@@ -311,9 +314,9 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                   value={saldoInicial}
                   onChange={(e) => setSaldoInicial(Number(e.target.value))}
                   placeholder="0"
-                  className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-sm font-mono font-bold text-red-600"
+                  className="w-full px-3 py-2 min-h-[48px] bg-white border border-amber-300 rounded-xl text-sm font-mono font-bold text-red-600"
                 />
-                <p className="text-[10px] text-amber-700 mt-1">
+                <p className="text-[10px] text-amber-700 mt-1 font-medium">
                   Si el cliente ya arranca debiendo plata, registralo aquí. Se creará un movimiento auditable de "SALDO INICIAL".
                 </p>
               </div>
@@ -326,7 +329,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 <select
                   value={estado}
                   onChange={(e) => setEstado(e.target.value as CustomerStatus)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900"
+                  className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900"
                 >
                   <option value="ACTIVO">Activo</option>
                   <option value="SUSPENDIDO">Suspendido por Mora</option>
@@ -349,17 +352,17 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
           </div>
 
           {/* Botones de Envío */}
-          <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200">
+          <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2 sm:gap-3 pt-4 border-t border-slate-200">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+              className="w-full sm:w-auto px-5 py-3 min-h-[48px] bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold rounded-xl transition"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center space-x-2"
+              className="w-full sm:w-auto px-6 py-3 min-h-[48px] bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md transition flex items-center justify-center space-x-2"
             >
               <Save className="w-4 h-4" />
               <span>Guardar Cliente</span>

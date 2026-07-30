@@ -78,9 +78,9 @@ export const CustomerList: React.FC<CustomerListProps> = ({
         <button
           id="btn-create-customer"
           onClick={onOpenNewCustomer}
-          className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-xs transition flex items-center justify-center space-x-2"
+          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs sm:text-sm px-4 py-3 min-h-[48px] rounded-xl shadow-md transition flex items-center justify-center space-x-2 cursor-pointer active:scale-98"
         >
-          <PlusCircle className="w-4 h-4" />
+          <PlusCircle className="w-5 h-5" />
           <span>Registrar Nuevo Cliente</span>
         </button>
       </div>
@@ -90,14 +90,14 @@ export const CustomerList: React.FC<CustomerListProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Búsqueda por texto */}
           <div className="relative sm:col-span-2">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
             <input
               type="text"
               id="input-search-customers"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Buscar por Nombre, Alias (ej: Don Juan), CUIT, Teléfono o Localidad..."
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+              className="w-full pl-10 pr-4 py-2.5 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
             />
           </div>
 
@@ -107,7 +107,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
               id="filter-route-select"
               value={selectedRoute}
               onChange={(e) => setSelectedRoute(e.target.value)}
-              className="w-full py-2 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full py-2.5 px-3 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="TODAS">📍 Todas las Rutas</option>
               {availableRoutes.map((r) => (
@@ -124,7 +124,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
               id="filter-risk-select"
               value={selectedRisk}
               onChange={(e) => setSelectedRisk(e.target.value)}
-              className="w-full py-2 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full py-2.5 px-3 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="TODOS">⚠️ Todos los Niveles de Riesgo</option>
               <option value="SOLO_DEUDORES">🔴 Solo Clientes con Deuda</option>

@@ -61,19 +61,19 @@ export const RegisterAjusteModal: React.FC<RegisterAjusteModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden my-8">
-        <div className="bg-[#0F172A] text-white px-6 py-4 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl max-w-md w-[95vw] sm:w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92dvh] flex flex-col">
+        <div className="bg-[#0F172A] text-white px-4 sm:px-6 py-3.5 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-2">
             <SlidersHorizontal className="w-5 h-5 text-amber-400" />
-            <h2 className="font-bold text-lg">Ajuste Auditable de Saldo</h2>
+            <h2 className="font-bold text-base sm:text-lg">Ajuste Auditable de Saldo</h2>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 transition">
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-2 transition min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
           <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-start space-x-2 text-xs text-amber-900">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <p>

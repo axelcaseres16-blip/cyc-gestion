@@ -360,13 +360,13 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
         {/* PASO 1: SELECCIONAR CLIENTE */}
         {!selectedCustomer && !lastSaleResult ? (
           <div className="lg:col-span-12 space-y-4">
-            <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  <span className="w-7 h-7 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center">
+            <div className="bg-white rounded-3xl p-4 sm:p-6 shadow-sm border border-slate-200">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div className="flex items-center space-x-2 min-w-0">
+                  <span className="w-7 h-7 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0">
                     1
                   </span>
-                  <h2 className="text-base sm:text-lg font-black text-slate-900">
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 truncate">
                     Buscar o Seleccionar Cliente
                   </h2>
                 </div>
@@ -377,27 +377,27 @@ export const FinalizarVentaScreen: React.FC<FinalizarVentaScreenProps> = ({
 
               {/* Input Buscador Gigante */}
               <div className="relative mb-4">
-                <Search className="w-6 h-6 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Escribí nombre, alias, dirección o ruta..."
-                  className="w-full pl-13 pr-4 py-4 bg-slate-50 border-2 border-slate-200 focus:border-blue-600 focus:bg-white rounded-2xl text-sm sm:text-base font-extrabold text-slate-900 placeholder-slate-400 focus:outline-none transition"
+                  className="w-full pl-11 pr-10 py-3.5 bg-slate-50 border-2 border-slate-200 focus:border-blue-600 focus:bg-white rounded-2xl text-sm sm:text-base font-extrabold text-slate-900 placeholder-slate-400 focus:outline-none transition min-h-[48px]"
                   autoFocus
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-600 cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 )}
               </div>
 
-              {/* Grid de Clientes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto pr-1">
+              {/* Grid de Clientes (Sin scroll interno para flujo de página continuo) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {filteredCustomers.map((c) => {
                   const hasDebt = c.saldoActual > 0;
                   return (

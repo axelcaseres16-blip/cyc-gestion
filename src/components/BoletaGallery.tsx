@@ -109,7 +109,7 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
                   <div className="flex items-start justify-between">
                     <div>
                       <p
-                        className="font-extrabold text-xs text-slate-900 hover:text-blue-600 transition cursor-pointer truncate max-w-[160px]"
+                        className="font-extrabold text-xs text-slate-900 hover:text-blue-600 transition cursor-pointer truncate max-w-[120px] sm:max-w-[180px]"
                         onClick={() => cust && onSelectCustomer(cust.id)}
                       >
                         {cust ? cust.alias || cust.nombre : 'Cliente Desconocido'}
