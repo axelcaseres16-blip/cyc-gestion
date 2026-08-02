@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Customer, CustomerCategory, VisitFrequency, CustomerStatus } from '../types';
+import { normalizeArgentineWhatsAppNumber } from '../utils/whatsappUtils';
 import { X, Save, Building2, MapPin, Phone, DollarSign, Calendar, AlertCircle } from 'lucide-react';
 
 interface CustomerModalProps {
@@ -77,6 +78,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
     if (!nombre.trim()) return;
 
     const finalRuta = zonaRuta === 'NUEVA' ? nuevaRutaCustom : zonaRuta;
+    const phoneNorm = normalizeArgentineWhatsAppNumber(telefono.trim());
 
     onSave(
       {
@@ -84,6 +86,8 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
         alias: alias.trim(),
         cuitDni: cuitDni.trim(),
         telefono: telefono.trim(),
+        telefonoOriginal: telefono.trim(),
+        telefonoWhatsAppNormalizado: phoneNorm.isValid ? phoneNorm.normalized : '',
         direccion: direccion.trim(),
         localidad: localidad.trim(),
         referenciaUbicacion: referenciaUbicacion.trim(),

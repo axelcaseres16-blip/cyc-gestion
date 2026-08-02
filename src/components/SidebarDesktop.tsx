@@ -53,6 +53,20 @@ export const SidebarDesktop: React.FC<SidebarDesktopProps> = ({
       badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
     },
     {
+      id: 'boletavirtual',
+      label: 'Boleta Virtual por Cliente',
+      icon: Receipt,
+      badge: 'Nuevo',
+      badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    },
+    {
+      id: 'stocksemanal',
+      label: 'Control de Stock Semanal',
+      icon: Building2,
+      badge: 'Semáforo',
+      badgeColor: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+    },
+    {
       id: 'hoy',
       label: 'HOY (Ruta de Reparto)',
       icon: Truck,

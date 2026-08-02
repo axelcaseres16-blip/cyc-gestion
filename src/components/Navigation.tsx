@@ -48,6 +48,20 @@ export const Navigation: React.FC<NavigationProps> = ({
       badgeColor: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
     },
     {
+      id: 'boletavirtual',
+      label: '📄 Boleta Virtual por Cliente',
+      icon: Receipt,
+      badge: 'Nuevo',
+      badgeColor: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+    },
+    {
+      id: 'stocksemanal',
+      label: '🥩 Control de Stock Semanal',
+      icon: Truck,
+      badge: 'Semáforo',
+      badgeColor: 'bg-teal-500/10 text-teal-600 border-teal-500/20',
+    },
+    {
       id: 'hoy',
       label: 'HOY (Ruta de Reparto)',
       icon: Truck,

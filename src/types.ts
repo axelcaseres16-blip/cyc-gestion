@@ -12,6 +12,36 @@ export type RiskLevel = 'BAJO' | 'MEDIO' | 'ALTO' | 'CRITICO';
 
 export type UserRole = 'DUENO' | 'ADMINISTRADOR' | 'REPARTIDOR';
 
+export type PriceListType = 'GENERAL' | 'MAYORISTA' | 'ESPECIAL' | 'PERSONALIZADA';
+
+export type ProductVentaType = 'POR_KILO' | 'POR_UNIDAD' | 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO';
+
+export type StockControlType = 'UNIDADES_Y_KILOS' | 'SOLO_KILOS' | 'SOLO_UNIDADES' | 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO';
+
+export interface Product {
+  id: string;
+  codigo: string;
+  nombre: string;
+  tipoVenta: ProductVentaType;
+  tipoControlStock: StockControlType;
+  unidadMedida: 'kg' | 'u';
+  precios: Record<PriceListType, number>;
+  stockMinimoUnidades: number;
+  stockMinimoKg: number;
+  activo: boolean;
+}
+
+export interface CustomerBranch {
+  id: string;
+  customerId: string;
+  nombre: string;
+  direccion: string;
+  localidad: string;
+  telefono?: string;
+  referenciaUbicacion?: string;
+  saldoActual: number;
+}
+
 export interface AppUser {
   id: string;
   nombre: string;
@@ -71,7 +101,7 @@ export interface ActivityLogEntry {
   fechaHora: string; // ISO String
   usuario: string;
   accion: string;
-  tipoAccion: 'BOLETA' | 'PAGO' | 'AJUSTE' | 'VISITA' | 'WHATSAPP' | 'LLAMADA' | 'CLIENTE' | 'CONFIG';
+  tipoAccion: 'BOLETA' | 'PAGO' | 'AJUSTE' | 'VISITA' | 'WHATSAPP' | 'LLAMADA' | 'CLIENTE' | 'CONFIG' | 'STOCK';
   customerId?: string;
   customerName?: string;
   detalles?: string;
@@ -99,6 +129,8 @@ export interface Customer {
   alias: string; // Nombre fantasía (ej: "Carnicería Don Juan")
   cuitDni: string;
   telefono: string;
+  telefonoOriginal?: string;
+  telefonoWhatsAppNormalizado?: string;
   direccion: string;
   localidad: string;
   referenciaUbicacion?: string;
@@ -109,6 +141,11 @@ export interface Customer {
   limiteCredito: number; // $ ARS
   diasTopeCredito: number; // Días máximos de plazo
   observaciones: string;
+  listaPrecioTipo?: PriceListType;
+  preciosPersonalizados?: Record<string, number>;
+  sucursales?: CustomerBranch[];
+  condicionesComerciales?: string;
+  formaPagoHabitual?: PaymentMethod | 'MIXTO' | 'DEBE';
   proximaVisita?: ProximaVisitaInfo;
   ultimaVisita?: UltimaVisitaInfo;
   createdAt: string;
@@ -118,6 +155,7 @@ export interface Customer {
 export interface Movement {
   id: string;
   customerId: string;
+  branchId?: string;
   tipo: MovementType;
   fecha: string; // ISO String (YYYY-MM-DDTHH:mm)
   numeroBoleta?: string; // Para tipo BOLETA
@@ -134,6 +172,7 @@ export interface Movement {
   anuladoAt?: string;
   motivoAnulacion?: string;
   movimientoInversoId?: string;
+  boletaVirtualId?: string;
 }
 
 export interface CustomerWithBalance extends Customer {
@@ -184,7 +223,7 @@ export interface TimelineItem {
 
 export type WhatsAppPostSaleBehavior = 'ALWAYS_AUTO' | 'ASK' | 'NONE';
 
-export type PaymentStatus = 'EFECTIVO' | 'TRANSFERENCIA' | 'PARCIAL' | 'DEBE';
+export type PaymentStatus = 'EFECTIVO' | 'TRANSFERENCIA' | 'PARCIAL' | 'DEBE' | 'MIXTO';
 
 export interface PendingSale {
   id: string;
@@ -203,3 +242,135 @@ export interface PendingSale {
   whatsappStatus: 'PENDIENTE' | 'ENVIADO' | 'NO_REQUERIDO';
   sincronizado: boolean;
 }
+
+export interface BoletaItem {
+  id: string;
+  productId: string;
+  productName: string;
+  tipoVenta: ProductVentaType;
+  unidades: number;
+  kilajeReal: number;
+  unidadMedida: 'kg' | 'u';
+  precioAplicado: number;
+  subtotal: number;
+  observacion?: string;
+}
+
+export interface VirtualBoleta {
+  id: string;
+  numeroBoleta: string;
+  customerId: string;
+  customerName: string;
+  branchId?: string;
+  branchName?: string;
+  fechaHora: string;
+  registradoPor: string;
+  listaPrecioAplicada: PriceListType | 'PERSONALIZADA';
+  items: BoletaItem[];
+  subtotal: number;
+  descuento: number;
+  recargo: number;
+  total: number;
+  pagoEfectivo: number;
+  pagoTransferencia: number;
+  pagoOtros: number;
+  totalPagado: number;
+  saldoRestanteBoleta: number;
+  saldoAnteriorCuenta: number;
+  nuevoSaldoCuenta: number;
+  fotoBoletaFisicaUrl?: string;
+  comprobanteImagenUrl?: string;
+  observacionesDocUrl?: string;
+  sincronizado: boolean;
+  isAnulado?: boolean;
+  anuladoPor?: string;
+  anuladoAt?: string;
+  motivoAnulacion?: string;
+}
+
+export type StockPeriodState = 'ABIERTA' | 'CERRADA' | 'EN_REVISION';
+
+export interface StockPeriod {
+  id: string;
+  semanaNombre: string;
+  fechaInicio: string;
+  fechaFin: string;
+  estado: StockPeriodState;
+  abiertaPor: string;
+  fechaApertura: string;
+  cerradaPor?: string;
+  fechaCierre?: string;
+  observaciones?: string;
+}
+
+export interface MataderoIngresoItem {
+  id: string;
+  productId: string;
+  productName: string;
+  unidades: number;
+  kilogramos: number;
+  lote?: string;
+  observacion?: string;
+  costoUnitario?: number;
+}
+
+export interface MataderoIngreso {
+  id: string;
+  semanaId: string;
+  fechaHora: string;
+  proveedor: string;
+  numeroRemito: string;
+  usuario: string;
+  observaciones?: string;
+  fotosUrls: string[];
+  items: MataderoIngresoItem[];
+  sincronizado: boolean;
+}
+
+export type StockMovementType =
+  | 'INGRESO_MATADERO'
+  | 'VENTA_CLIENTE'
+  | 'AJUSTE_POSITIVO'
+  | 'AJUSTE_NEGATIVO'
+  | 'MERMA'
+  | 'DEVOLUCION_CLIENTE'
+  | 'DEVOLUCION_PROVEEDOR'
+  | 'CONTEO_FISICO'
+  | 'ANULACION';
+
+export interface StockMovement {
+  id: string;
+  semanaId: string;
+  productId: string;
+  productName: string;
+  tipo: StockMovementType;
+  direccion: 'ENTRADA' | 'SALIDA';
+  unidades: number;
+  kilogramos: number;
+  referenciaOrigenId?: string;
+  customerId?: string;
+  customerName?: string;
+  branchId?: string;
+  usuario: string;
+  fechaHora: string;
+  motivo: string;
+  sincronizado: boolean;
+  saldoPosteriorUnidades: number;
+  saldoPosteriorKilogramos: number;
+}
+
+export type SemaforoState = 'VERDE' | 'AMARILLO' | 'ROJO' | 'GRIS';
+
+export interface ProductStockSummary {
+  product: Product;
+  unidadesDisponibles: number;
+  kilogramosDisponibles: number;
+  unidadesIngresadas: number;
+  kilogramosIngresados: number;
+  unidadesVendidas: number;
+  kilogramosVendidos: number;
+  unidadesMermas: number;
+  kilogramosMermas: number;
+  estadoSemaforo: SemaforoState;
+}
+

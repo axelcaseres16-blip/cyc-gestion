@@ -1,4 +1,5 @@
 import { CustomerWithBalance, Movement, WhatsAppTemplates } from '../types';
+import { normalizeArgentineWhatsAppNumber } from './whatsappUtils';
 
 /**
  * Formatea un número a Pesos Argentinos ($ ARS) con separador de miles.
@@ -58,14 +59,8 @@ export function getDaysAgo(isoDate?: string): number {
  */
 export function cleanPhoneNumber(phone: string): string {
   if (!phone) return '';
-  let cleaned = phone.replace(/\D/g, '');
-  if (cleaned.startsWith('0')) {
-    cleaned = cleaned.substring(1);
-  }
-  if (!cleaned.startsWith('54')) {
-    cleaned = '549' + cleaned; // Formato internacional recomendado para WA Arg
-  }
-  return cleaned;
+  const result = normalizeArgentineWhatsAppNumber(phone);
+  return result.isValid ? result.normalized : phone.replace(/\D/g, '');
 }
 
 /**

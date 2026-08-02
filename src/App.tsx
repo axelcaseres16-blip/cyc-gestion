@@ -31,6 +31,8 @@ import { CuentaCorrienteScreen } from './components/CuentaCorrienteScreen';
 import { HoyRepartidorScreen } from './components/HoyRepartidorScreen';
 import { ActivityLogScreen } from './components/ActivityLogScreen';
 import { FinalizarVentaScreen } from './components/FinalizarVentaScreen';
+import { VirtualBoletaScreen } from './components/VirtualBoletaScreen';
+import { WeeklyStockScreen } from './components/WeeklyStockScreen';
 import { SystemAuditScreen } from './components/SystemAuditScreen';
 import { DriverPanelScreen } from './components/DriverPanelScreen';
 import { AlertCenterScreen } from './components/AlertCenterScreen';
@@ -46,6 +48,17 @@ import { SettingsModal } from './components/SettingsModal';
 import { DataBackupModal } from './components/DataBackupModal';
 import { ImageViewerModal } from './components/ImageViewerModal';
 import { OfflineSyncModal } from './components/OfflineSyncModal';
+
+import { initConnectivitySyncListeners, runFullSyncProcess } from './utils/syncEngine';
+import { idbGetPendingQueueItems } from './utils/indexedDBEngine';
+import { PendingSaleRecoveryModal } from './components/PendingSaleRecoveryModal';
+import { VirtualBoletaModal } from './components/VirtualBoletaModal';
+import {
+  getPendingCompletedSale,
+  clearPendingCompletedSale,
+  registerVisibilitySync,
+  PendingCompletedSale,
+} from './utils/completedSaleStorage';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(getCurrentUser());
@@ -80,6 +93,53 @@ export default function App() {
     imageUrl: string;
     title: string;
   }>({ isOpen: false, imageUrl: '', title: '' });
+
+  // Recovery state for completed sale when app backgrounds or restarts
+  const [pendingSaleToRecover, setPendingSaleToRecover] = useState<PendingCompletedSale | null>(null);
+  const [recoveredBoletaModalData, setRecoveredBoletaModalData] = useState<PendingCompletedSale | null>(null);
+  const [startupRecoveryBanner, setStartupRecoveryBanner] = useState<string | null>(null);
+
+  // Inicialización de escuchadores offline/online y verificación de cola en IndexedDB al arrancar
+  useEffect(() => {
+    initConnectivitySyncListeners();
+
+    idbGetPendingQueueItems().then((pending) => {
+      if (pending && pending.length > 0) {
+        setStartupRecoveryBanner(
+          `⚡ Se recuperaron ${pending.length} operación(es) pendiente(s) guardadas localmente en este dispositivo.`
+        );
+        runFullSyncProcess().catch(() => {});
+      }
+    });
+  }, []);
+
+  // Sync and recovery listener
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const checkPending = () => {
+      const sale = getPendingCompletedSale();
+      if (sale && !sale.isClosed && !recoveredBoletaModalData) {
+        setPendingSaleToRecover(sale);
+      }
+    };
+
+    checkPending();
+
+    const cleanupVisibility = registerVisibilitySync(() => getPendingCompletedSale());
+
+    const handleVis = () => {
+      if (document.visibilityState === 'visible') {
+        checkPending();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVis);
+    return () => {
+      cleanupVisibility();
+      document.removeEventListener('visibilitychange', handleVis);
+    };
+  }, [currentUser, recoveredBoletaModalData]);
 
   // Cargar todos los datos
   const refreshData = () => {
@@ -260,6 +320,22 @@ export default function App() {
 
       {/* Contenedor Principal (Header + Vistas) */}
       <div className="flex-1 flex flex-col min-w-0 w-full min-h-[100dvh]">
+        {/* Banner de Recuperación de Operaciones Offline al Iniciar */}
+        {startupRecoveryBanner && (
+          <div className="bg-amber-500 text-slate-950 px-4 py-2.5 text-xs font-black flex items-center justify-between shrink-0 shadow-md border-b border-amber-600 animate-fadeIn z-40">
+            <div className="flex items-center space-x-2">
+              <span className="text-base">⚡</span>
+              <span>{startupRecoveryBanner}</span>
+            </div>
+            <button
+              onClick={() => setStartupRecoveryBanner(null)}
+              className="px-2.5 py-1 bg-slate-950 text-white rounded-lg hover:bg-black text-[10px] uppercase font-extrabold cursor-pointer transition"
+            >
+              Entendido
+            </button>
+          </div>
+        )}
+
         {/* Header Principal */}
         <Navbar
           activeView={activeView}
@@ -288,12 +364,32 @@ export default function App() {
         <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-6 pb-20 md:pb-8 overflow-x-hidden">
         <ErrorBoundary key={activeView} onReset={() => setActiveView('finalizarventa')}>
           {activeView === 'finalizarventa' && (
-            <FinalizarVentaScreen
+            <VirtualBoletaScreen
               customers={customers}
               onSaleCompleted={refreshData}
               currentUser={currentUser}
               preselectedCustomer={preselectedCustomerForSale}
-              onClearPreselectedCustomer={() => setPreselectedCustomerForSale(undefined)}
+              onViewImage={(url, title) =>
+                setImageViewerData({ isOpen: true, imageUrl: url, title })
+              }
+            />
+          )}
+
+          {activeView === 'boletavirtual' && (
+            <VirtualBoletaScreen
+              customers={customers}
+              onSaleCompleted={refreshData}
+              currentUser={currentUser}
+              preselectedCustomer={preselectedCustomerForSale}
+              onViewImage={(url, title) =>
+                setImageViewerData({ isOpen: true, imageUrl: url, title })
+              }
+            />
+          )}
+
+          {activeView === 'stocksemanal' && (
+            <WeeklyStockScreen
+              currentUser={currentUser}
               onViewImage={(url, title) =>
                 setImageViewerData({ isOpen: true, imageUrl: url, title })
               }
@@ -534,6 +630,43 @@ export default function App() {
         currentUser={currentUser}
         onSuccess={refreshData}
       />
+
+      {/* Recovery Modal for Unclosed Completed Sales */}
+      {pendingSaleToRecover && (
+        <PendingSaleRecoveryModal
+          pendingSale={pendingSaleToRecover}
+          onContinue={() => {
+            setRecoveredBoletaModalData(pendingSaleToRecover);
+            setActiveView(pendingSaleToRecover.activeView || 'finalizarventa');
+            setPendingSaleToRecover(null);
+          }}
+          onCloseOperation={() => {
+            clearPendingCompletedSale();
+            setPendingSaleToRecover(null);
+          }}
+          onViewImage={(url, title) =>
+            setImageViewerData({ isOpen: true, imageUrl: url, title })
+          }
+        />
+      )}
+
+      {/* Re-opened Virtual Boleta Modal for recovered sale */}
+      {recoveredBoletaModalData && (
+        <VirtualBoletaModal
+          boleta={recoveredBoletaModalData.boleta}
+          customerPhone={recoveredBoletaModalData.customerPhone}
+          initialEnvioEstado={recoveredBoletaModalData.envioEstado}
+          activeViewName={recoveredBoletaModalData.activeView}
+          onClose={() => {
+            clearPendingCompletedSale();
+            setRecoveredBoletaModalData(null);
+          }}
+          onViewImage={(url, title) =>
+            setImageViewerData({ isOpen: true, imageUrl: url, title })
+          }
+          currentUser={currentUser}
+        />
+      )}
       </div>
     </div>
   );

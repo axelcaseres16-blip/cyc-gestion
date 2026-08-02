@@ -1,14 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { X, RefreshCw, Wifi, WifiOff, CheckCircle2, AlertCircle, MessageSquare, Trash2, Camera } from 'lucide-react';
 import {
-  getPendingSales,
-  syncPendingSales,
-  clearSyncedPendingSales,
-  isSimulatedOffline,
-  setSimulatedOffline,
-} from '../utils/storage';
-import { PendingSale } from '../types';
-import { formatCurrency, formatDate } from '../utils/formatters';
+  X,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  CheckCircle2,
+  AlertCircle,
+  Database,
+  Camera,
+  AlertTriangle,
+  RotateCcw,
+  Check,
+  Server,
+  Smartphone,
+  Eye,
+  Trash2,
+} from 'lucide-react';
+import {
+  idbGetAllQueueItems,
+  idbGetAllImages,
+  idbGetPendingConflicts,
+  SyncQueueItem,
+  ImageBlobEntry,
+  SyncConflictItem,
+  getDeviceId,
+  idbRemoveQueueItem,
+} from '../utils/indexedDBEngine';
+import {
+  runFullSyncProcess,
+  getSyncEngineStatus,
+  SyncEngineStatusSummary,
+  subscribeToSyncEngine,
+} from '../utils/syncEngine';
+import { isSimulatedOffline, setSimulatedOffline } from '../utils/storage';
+import { formatDate } from '../utils/formatters';
 
 interface OfflineSyncModalProps {
   isOpen: boolean;
@@ -23,18 +48,41 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
   onRefreshData,
   onViewImage,
 }) => {
-  const [pendingSales, setPendingSalesState] = useState<PendingSale[]>([]);
-  const [simulatedOfflineState, setSimulatedOfflineState] = useState<boolean>(false);
-  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'queue' | 'images' | 'conflicts' | 'device'>('queue');
+  const [queueItems, setQueueItems] = useState<SyncQueueItem[]>([]);
+  const [imagesQueue, setImagesQueue] = useState<ImageBlobEntry[]>([]);
+  const [conflicts, setConflicts] = useState<SyncConflictItem[]>([]);
+  const [simulatedOfflineState, setSimulatedOfflineState] = useState<boolean>(isSimulatedOffline());
+  const [syncStatus, setSyncStatus] = useState<SyncEngineStatusSummary | null>(null);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const [selectedItemDetail, setSelectedItemDetail] = useState<SyncQueueItem | null>(null);
 
-  const reloadData = () => {
-    setPendingSalesState(getPendingSales());
-    setSimulatedOfflineState(isSimulatedOffline());
+  const deviceId = getDeviceId();
+
+  const reloadAllData = async () => {
+    try {
+      const q = await idbGetAllQueueItems();
+      const img = await idbGetAllImages();
+      const conf = await idbGetPendingConflicts();
+      const st = await getSyncEngineStatus();
+
+      setQueueItems(q.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setImagesQueue(img.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setConflicts(conf);
+      setSyncStatus(st);
+      setSimulatedOfflineState(isSimulatedOffline());
+    } catch (err) {
+      console.error('Error cargando Centro de Sincronización:', err);
+    }
   };
 
   useEffect(() => {
     if (isOpen) {
-      reloadData();
+      reloadAllData();
+      const unsubscribe = subscribeToSyncEngine(() => {
+        reloadAllData();
+      });
+      return () => unsubscribe();
     }
   }, [isOpen]);
 
@@ -44,213 +92,405 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
     const nextVal = !simulatedOfflineState;
     setSimulatedOffline(nextVal);
     setSimulatedOfflineState(nextVal);
+    reloadAllData();
   };
 
-  const handleSyncAll = () => {
-    const count = syncPendingSales();
-    setSyncSuccessMsg(`¡Se sincronizaron ${count} ventas e historiales correctamente!`);
+  const handleForceSync = async () => {
+    setSyncFeedback('Iniciando sincronización...');
+    const result = await runFullSyncProcess();
     onRefreshData();
-    reloadData();
-    setTimeout(() => {
-      setSyncSuccessMsg(null);
-    }, 3000);
+    await reloadAllData();
+
+    if (result.success) {
+      setSyncFeedback(`¡Sincronización completada! ${result.processedCount} operaciones procesadas.`);
+    } else {
+      setSyncFeedback(`Sincronización finalizada con ${result.errorCount} errores.`);
+    }
+
+    setTimeout(() => setSyncFeedback(null), 4000);
   };
 
-  const handleClearSynced = () => {
-    clearSyncedPendingSales();
-    reloadData();
+  const handleClearSynced = async () => {
+    const synced = queueItems.filter((i) => i.status === 'SYNCED');
+    for (const item of synced) {
+      await idbRemoveQueueItem(item.operationId);
+    }
+    reloadAllData();
   };
 
-  const unsyncedCount = pendingSales.filter((p) => !p.sincronizado).length;
   const isActuallyOffline = !navigator.onLine || simulatedOfflineState;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 animate-fade-in overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-2xl w-[95vw] sm:w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92dvh] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-fadeIn overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-4xl w-[96vw] sm:w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92dvh] flex flex-col">
+        
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
+        <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0 border-b border-slate-800">
           <div className="flex items-center space-x-3">
-            <div className={`p-2 rounded-2xl ${isActuallyOffline ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+            <div className={`p-2.5 rounded-2xl ${isActuallyOffline ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}>
               {isActuallyOffline ? <WifiOff className="w-6 h-6" /> : <Wifi className="w-6 h-6" />}
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-white">
-                Sincronización & Trabajo Sin Conexión (Offline)
-              </h2>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-base sm:text-lg font-black text-white">
+                  Centro de Sincronización & Idempotencia Offline
+                </h2>
+                <span className="bg-slate-800 text-slate-300 font-mono text-[10px] px-2 py-0.5 rounded-md border border-slate-700">
+                  ID Dispositivo: {deviceId.substring(0, 15)}...
+                </span>
+              </div>
               <p className="text-xs text-slate-300 font-medium">
-                {isActuallyOffline ? '🔴 Modo Sin Conexión Activo' : '🟢 Conexión a Internet Estable'}
+                {isActuallyOffline
+                  ? '🔴 Modo Sin Conexión Activo (Guardando todo en IndexedDB)'
+                  : '🟢 Conexión a Servidor Estable (Conexión activa)'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-full transition"
+            className="p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-full transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-5">
-          {/* Simulated Offline Toggle Control for Testing */}
-          <div className="p-4 bg-slate-900 text-white rounded-2xl border border-slate-800 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">
-                Simulador para Demostración
-              </span>
-              <p className="font-extrabold text-sm text-white">Simular Corte de Señal / Internet</p>
-              <p className="text-xs text-slate-400">
-                Permite probar cómo funciona la app sin señal arriba del camión.
-              </p>
+        {/* Feedback Message Banner */}
+        {syncFeedback && (
+          <div className="bg-blue-600 text-white px-4 py-2.5 text-xs font-bold flex items-center justify-between shrink-0 shadow-inner">
+            <div className="flex items-center space-x-2">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span>{syncFeedback}</span>
             </div>
+            <button onClick={() => setSyncFeedback(null)} className="text-blue-200 hover:text-white font-black">✕</button>
+          </div>
+        )}
+
+        {/* Top Control Bar & Simulator */}
+        <div className="bg-slate-100 p-3 sm:p-4 border-b border-slate-200 shrink-0 flex flex-wrap items-center justify-between gap-3">
+          
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleToggleOffline}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition border shadow-sm ${
-                simulatedOfflineState
-                  ? 'bg-red-600 text-white border-red-500 shadow-red-900/50'
-                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+              onClick={handleForceSync}
+              disabled={isActuallyOffline || syncStatus?.isSyncing}
+              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-black text-xs transition shadow-xs cursor-pointer ${
+                isActuallyOffline || syncStatus?.isSyncing
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
               }`}
             >
-              {simulatedOfflineState ? '🔴 CORTE ACTIVADO' : '⚪ ONLINE NORMAL'}
+              <RefreshCw className={`w-4 h-4 ${syncStatus?.isSyncing ? 'animate-spin' : ''}`} />
+              <span>{syncStatus?.isSyncing ? 'Sincronizando...' : 'Sincronizar Ahora'}</span>
+            </button>
+
+            <button
+              onClick={handleClearSynced}
+              className="flex items-center space-x-1.5 px-3 py-2.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 transition cursor-pointer"
+              title="Limpiar operaciones confirmadas del historial local"
+            >
+              <Trash2 className="w-4 h-4 text-slate-500" />
+              <span className="hidden sm:inline">Limpiar Completados</span>
             </button>
           </div>
 
-          {syncSuccessMsg && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs font-extrabold flex items-center space-x-2 animate-fade-in">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-              <span>{syncSuccessMsg}</span>
+          {/* Offline Simulator Switch */}
+          <div className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-800">
+            <span className="text-[11px] font-extrabold uppercase text-amber-700">Simular Sin Conexión:</span>
+            <button
+              onClick={handleToggleOffline}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
+                simulatedOfflineState ? 'bg-red-600' : 'bg-slate-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  simulatedOfflineState ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="bg-white border-b border-slate-200 shrink-0 px-4 flex space-x-2 overflow-x-auto text-xs font-black">
+          <button
+            onClick={() => setActiveTab('queue')}
+            className={`py-3 px-3 border-b-2 transition flex items-center space-x-1.5 cursor-pointer ${
+              activeTab === 'queue'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Database className="w-4 h-4" />
+            <span>Cola de Ventas & Operaciones ({queueItems.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('images')}
+            className={`py-3 px-3 border-b-2 transition flex items-center space-x-1.5 cursor-pointer ${
+              activeTab === 'images'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Camera className="w-4 h-4" />
+            <span>Imágenes & Archivos ({imagesQueue.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('conflicts')}
+            className={`py-3 px-3 border-b-2 transition flex items-center space-x-1.5 cursor-pointer ${
+              activeTab === 'conflicts'
+                ? 'border-amber-600 text-amber-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            <span>Conflictos ({conflicts.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('device')}
+            className={`py-3 px-3 border-b-2 transition flex items-center space-x-1.5 cursor-pointer ${
+              activeTab === 'device'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Smartphone className="w-4 h-4" />
+            <span>Info del Dispositivo</span>
+          </button>
+        </div>
+
+        {/* Tab Content Body */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs">
+          
+          {/* TAB 1: COLA DE OPERACIONES */}
+          {activeTab === 'queue' && (
+            <div className="space-y-3">
+              {queueItems.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 space-y-2">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+                  <p className="font-extrabold text-slate-800">¡Cola de sincronización vacía!</p>
+                  <p className="text-xs">Todas las operaciones registradas en este dispositivo están al día.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-2xs">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 text-slate-700 font-extrabold uppercase tracking-wider border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">Estado</th>
+                        <th className="p-3">Operación / ID</th>
+                        <th className="p-3">Tipo</th>
+                        <th className="p-3">Usuario</th>
+                        <th className="p-3">Fecha</th>
+                        <th className="p-3 text-right">Detalle</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 font-medium text-slate-800">
+                      {queueItems.map((item) => (
+                        <tr key={item.operationId} className="hover:bg-slate-50">
+                          <td className="p-3">
+                            {item.status === 'SYNCED' && (
+                              <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Sincronizado
+                              </span>
+                            )}
+                            {item.status === 'LOCAL_SAVED' && (
+                              <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                                <Database className="w-3 h-3 text-amber-600" /> Guardado Local
+                              </span>
+                            )}
+                            {item.status === 'SYNCING' && (
+                              <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                                <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" /> Procesando
+                              </span>
+                            )}
+                            {item.status === 'ERROR' && (
+                              <span className="inline-flex items-center gap-1 bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded-full text-[10px]" title={item.lastError}>
+                                <AlertCircle className="w-3 h-3 text-red-600" /> Error ({item.retryCount || 1})
+                              </span>
+                            )}
+                            {item.status === 'CONFLICT' && (
+                              <span className="inline-flex items-center gap-1 bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                                <AlertTriangle className="w-3 h-3 text-amber-700" /> Conflicto
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="p-3 font-mono text-[11px] font-bold text-slate-900">
+                            {item.operationId.substring(0, 22)}...
+                          </td>
+
+                          <td className="p-3 font-bold text-slate-900">
+                            {item.entityType === 'ATOMIC_SALE' ? '🛍️ Venta Completa' : item.entityType}
+                          </td>
+
+                          <td className="p-3 text-slate-700 font-semibold">{item.createdBy || 'Sistema'}</td>
+
+                          <td className="p-3 text-slate-500 font-mono text-[10px]">
+                            {new Date(item.createdAt).toLocaleString('es-AR')}
+                          </td>
+
+                          <td className="p-3 text-right">
+                            <button
+                              onClick={() => setSelectedItemDetail(item)}
+                              className="text-blue-600 hover:text-blue-800 font-bold text-xs underline cursor-pointer"
+                            >
+                              Ver Payload
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Sync status summary & action */}
-          <div className="flex flex-col sm:flex-row items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-2xl gap-3">
-            <div>
-              <p className="text-xs font-black uppercase text-blue-900 tracking-wider">
-                Estado de la Cola de Ventas
-              </p>
-              <p className="text-sm font-bold text-blue-950 mt-0.5">
-                {unsyncedCount > 0
-                  ? `Hay ${unsyncedCount} venta(s) pendiente(s) de sincronizar`
-                  : 'Todas las ventas están 100% sincronizadas y respaldadas'}
-              </p>
-            </div>
-            {unsyncedCount > 0 && (
-              <button
-                onClick={handleSyncAll}
-                className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md transition flex items-center justify-center space-x-2"
-              >
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Sincronizar Todo Ahora</span>
-              </button>
-            )}
-          </div>
-
-          {/* List of Pending Sales */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">
-                Registro de Operaciones Recientes ({pendingSales.length})
-              </h3>
-              {pendingSales.some((p) => p.sincronizado) && (
-                <button
-                  onClick={handleClearSynced}
-                  className="text-[11px] font-bold text-slate-500 hover:text-slate-800 flex items-center space-x-1"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Limpiar ya sincronizados</span>
-                </button>
-              )}
-            </div>
-
-            {pendingSales.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
-                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                <p className="text-sm font-bold text-slate-700">Sin ventas pendientes</p>
-                <p className="text-xs text-slate-500">
-                  Todas las ventas realizadas fueron respaldadas y sincronizadas correctamente.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                {pendingSales.map((sale) => (
-                  <div
-                    key={sale.id}
-                    className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-2xs flex items-center justify-between gap-3 hover:border-slate-300 transition"
-                  >
-                    <div className="flex items-center space-x-3 overflow-hidden">
-                      {/* Photo Thumbnail */}
-                      {sale.fotoUrl ? (
-                        <button
-                          onClick={() => onViewImage && onViewImage(sale.fotoUrl, `Boleta: ${sale.customerName}`)}
-                          className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-300 overflow-hidden shrink-0 group relative"
-                        >
-                          <img src={sale.fotoUrl} alt="Boleta" className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-slate-900/30 group-hover:bg-slate-900/50 flex items-center justify-center transition">
-                            <Camera className="w-4 h-4 text-white" />
-                          </div>
-                        </button>
-                      ) : (
-                        <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
-                          <Camera className="w-5 h-5" />
-                        </div>
-                      )}
-
-                      <div className="min-w-0">
+          {/* TAB 2: IMÁGENES Y ARCHIVOS */}
+          {activeTab === 'images' && (
+            <div className="space-y-3">
+              {imagesQueue.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 space-y-2">
+                  <Camera className="w-10 h-10 text-slate-400 mx-auto" />
+                  <p className="font-extrabold text-slate-800">No hay imágenes en cola</p>
+                  <p className="text-xs">Los comprobantes y fotos se guardan primero en IndexedDB antes de subir a la nube.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {imagesQueue.map((img) => (
+                    <div key={img.imageId} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center space-x-3">
+                      <div className="w-16 h-16 bg-slate-900 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border border-slate-300">
+                        {typeof img.blob === 'string' && img.blob.startsWith('data:') ? (
+                          <img src={img.blob} alt={img.fileName} className="w-full h-full object-cover" />
+                        ) : (
+                          <Camera className="w-6 h-6 text-slate-400" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <p className="font-bold text-slate-900 truncate">{img.fileName}</p>
+                        <p className="text-[10px] text-slate-500 font-mono truncate">{img.pathName}</p>
                         <div className="flex items-center space-x-2">
-                          <p className="font-extrabold text-xs text-slate-900 truncate">
-                            {sale.customerName}
-                          </p>
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded font-black border ${
-                              sale.sincronizado
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-amber-50 text-amber-700 border-amber-200'
-                            }`}
-                          >
-                            {sale.sincronizado ? 'SINCRONIZADO' : 'PENDIENTE'}
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                            img.status === 'UPLOADED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {img.status}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {new Date(img.createdAt).toLocaleTimeString('es-AR')}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500 font-medium">
-                          {formatDate(sale.fechaHora, true)} • Estado: <span className="font-bold text-slate-800">{sale.estadoPago}</span>
-                        </p>
-                        <p className="text-[11px] font-mono font-black text-slate-900">
-                          Total: {formatCurrency(sale.montoTotal)}
-                          {sale.montoAbonado > 0 && (
-                            <span className="text-emerald-600 ml-1">
-                              (Abonó {formatCurrency(sale.montoAbonado)})
-                            </span>
-                          )}
-                        </p>
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-                    <div className="shrink-0 text-right">
-                      <a
-                        href={`https://wa.me/?text=${encodeURIComponent(
-                          `📄 Boleta ${sale.customerName}: Total ${formatCurrency(sale.montoTotal)}`
-                        )}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center space-x-1 text-[10px] font-extrabold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1.5 rounded-xl transition"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Reenviar WA</span>
-                      </a>
+          {/* TAB 3: CONTROL DE CONFLICTOS */}
+          {activeTab === 'conflicts' && (
+            <div className="space-y-3">
+              {conflicts.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 space-y-2">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+                  <p className="font-extrabold text-slate-800">Sin conflictos de concurrencia</p>
+                  <p className="text-xs">
+                    Las ventas, pagos y stock se gestionan mediante registros incrementales e idempotentes.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {conflicts.map((conf) => (
+                    <div key={conf.conflictId} className="p-4 bg-amber-50 rounded-2xl border border-amber-200 space-y-2 text-amber-900">
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-sm flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-600" /> {conf.proposedAction}
+                        </span>
+                        <span className="text-[10px] font-mono text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full font-bold">
+                          {conf.date} - Usuario: {conf.user}
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-800">
+                        Esta modificación ocurrió simultáneamente con otro dispositivo.
+                      </p>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-[11px] text-slate-600 space-y-1">
-            <p className="font-bold text-slate-800">🛡️ Garantía de Almacenamiento Local:</p>
-            <p>
-              Aunque la app se cierre, el celular se reinicie o se agote la batería, ninguna venta ni foto de boleta se perderá jamás. Todo queda guardado de manera persistente en la memoria interna.
-            </p>
+          {/* TAB 4: INFO DEL DISPOSITIVO */}
+          {activeTab === 'device' && (
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3 font-mono text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-slate-500 font-bold block">ID del Dispositivo:</span>
+                  <span className="font-black text-slate-900 break-all">{deviceId}</span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-slate-500 font-bold block">Navegador & Conexión:</span>
+                  <span className="font-black text-slate-900">
+                    {navigator.onLine ? '🟢 Online' : '🔴 Offline'} | {navigator.userAgent.substring(0, 30)}...
+                  </span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-slate-500 font-bold block">Motor Local:</span>
+                  <span className="font-black text-emerald-700">IndexedDB (cyc_gestion_offline_v2_db) OK</span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-slate-500 font-bold block">Estrategia de Idempotencia:</span>
+                  <span className="font-black text-slate-900">Operaciones únicas + atomic transaction payloads</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Footer */}
+        <div className="bg-slate-100 px-4 py-3 border-t border-slate-200 flex items-center justify-between shrink-0 text-xs font-bold text-slate-600">
+          <span>Menudencias C&C - Garantía de Cero Pérdida de Datos</span>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-900 hover:bg-black text-white font-black rounded-xl transition cursor-pointer"
+          >
+            Cerrar
+          </button>
+        </div>
+
+      </div>
+
+      {/* Detail Payload Drawer Modal */}
+      {selectedItemDetail && (
+        <div className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-5 shadow-2xl border border-slate-300 space-y-3 font-sans max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2 shrink-0">
+              <h3 className="font-extrabold text-slate-900 text-sm">
+                Payload de Operación #{selectedItemDetail.operationId.substring(0, 18)}...
+              </h3>
+              <button
+                onClick={() => setSelectedItemDetail(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-3 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-xl border border-slate-800 space-y-2">
+              <pre>{JSON.stringify(selectedItemDetail.payload, null, 2)}</pre>
+            </div>
+            <button
+              onClick={() => setSelectedItemDetail(null)}
+              className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-black rounded-xl cursor-pointer text-xs"
+            >
+              Cerrar Detalle
+            </button>
           </div>
         </div>
-      </div>
+      )}
+
     </div>
   );
 };

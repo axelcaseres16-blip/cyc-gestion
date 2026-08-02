@@ -1,0 +1,1025 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  CustomerWithBalance,
+  CustomerBranch,
+  Product,
+  PriceListType,
+  BoletaItem,
+  VirtualBoleta,
+  AppUser,
+  PaymentMethod,
+} from '../types';
+import {
+  getStoredProducts,
+  getStockSummaryForPeriod,
+  finalizeVirtualBoleta,
+  getStoredVirtualBoletas,
+  saveVirtualBoletas,
+} from '../utils/stockAndBoletasManager';
+import { generateBoletaImage } from '../utils/boletaImageGenerator';
+import {
+  saveSaleDraft,
+  getSaleDraft,
+  clearSaleDraft,
+} from '../utils/storage';
+import { formatCurrency, formatDate } from '../utils/formatters';
+import { VirtualBoletaModal } from './VirtualBoletaModal';
+import {
+  Search,
+  Plus,
+  Trash2,
+  Camera,
+  CheckCircle2,
+  AlertTriangle,
+  FileText,
+  Building2,
+  DollarSign,
+  UserCheck,
+  Zap,
+  MessageSquare,
+  ShieldAlert,
+  Info,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react';
+
+interface VirtualBoletaScreenProps {
+  customers: CustomerWithBalance[];
+  currentUser: AppUser;
+  onSaleCompleted: () => void;
+  preselectedCustomer?: CustomerWithBalance;
+  onViewImage?: (url: string, title: string) => void;
+}
+
+export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
+  customers,
+  currentUser,
+  onSaleCompleted,
+  preselectedCustomer,
+  onViewImage,
+}) => {
+  const isRepartidor = currentUser.role === 'REPARTIDOR';
+  const isDuenoOrAdmin = currentUser.role === 'DUENO' || currentUser.role === 'ADMINISTRADOR';
+
+  // Products and Stock Data
+  const [products, setProducts] = useState<Product[]>(getStoredProducts());
+  const [stockSummary, setStockSummary] = useState(getStockSummaryForPeriod());
+
+  // Customer Selection State
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerWithBalance | null>(
+    preselectedCustomer || null
+  );
+  const [selectedBranch, setSelectedBranch] = useState<CustomerBranch | null>(null);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+
+  // Active Price List State
+  const [activePriceList, setActivePriceList] = useState<PriceListType>('GENERAL');
+
+  // Boleta Items State
+  const [items, setItems] = useState<
+    {
+      id: string;
+      productId: string;
+      unidadesInput: string;
+      kilajeInput: string;
+      precioOverride: string;
+      observacion: string;
+    }[]
+  >([
+    {
+      id: `item_${Date.now()}_1`,
+      productId: products[0]?.id || '',
+      unidadesInput: '',
+      kilajeInput: '',
+      precioOverride: '',
+      observacion: '',
+    },
+  ]);
+
+  // Financial Overrides
+  const [descuentoInput, setDescuentoInput] = useState<string>('0');
+  const [recargoInput, setRecargoInput] = useState<string>('0');
+
+  // Payment Selection State
+  const [pagoTipo, setPagoTipo] = useState<
+    'DEBE' | 'EFECTIVO' | 'TRANSFERENCIA' | 'PARCIAL' | 'MIXTO'
+  >('DEBE');
+
+  const [pagoEfectivoInput, setPagoEfectivoInput] = useState<string>('0');
+  const [pagoTransferenciaInput, setPagoTransferenciaInput] = useState<string>('0');
+  const [pagoOtrosInput, setPagoOtrosInput] = useState<string>('0');
+
+  // Physical Photo State
+  const [fotoUrl, setFotoUrl] = useState<string>('');
+  const [photoError, setPhotoError] = useState<boolean>(false);
+
+  // Stock Warning Override Justification
+  const [stockJustification, setStockJustification] = useState<string>('');
+
+  // Generated Boleta Modal
+  const [completedBoleta, setCompletedBoleta] = useState<VirtualBoleta | null>(null);
+
+  // Draft Notice
+  const [restoredDraftNotice, setRestoredDraftNotice] = useState<boolean>(false);
+
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-load Customer details when selected
+  useEffect(() => {
+    if (selectedCustomer) {
+      const listType = selectedCustomer.listaPrecioTipo || 'GENERAL';
+      setActivePriceList(listType);
+
+      // Default payment mode if customary
+      if (selectedCustomer.formaPagoHabitual === 'EFECTIVO') setPagoTipo('EFECTIVO');
+      else if (selectedCustomer.formaPagoHabitual === 'TRANSFERENCIA') setPagoTipo('TRANSFERENCIA');
+      else if (selectedCustomer.formaPagoHabitual === 'MIXTO') setPagoTipo('MIXTO');
+      else setPagoTipo('DEBE');
+
+      // Select default branch if available
+      if (selectedCustomer.sucursales && selectedCustomer.sucursales.length > 0) {
+        setSelectedBranch(selectedCustomer.sucursales[0]);
+      } else {
+        setSelectedBranch(null);
+      }
+    }
+  }, [selectedCustomer]);
+
+  // Restore Draft on mount if available
+  useEffect(() => {
+    const draft = getSaleDraft();
+    if (draft && !preselectedCustomer) {
+      if (draft.customerId) {
+        const found = customers.find((c) => c.id === draft.customerId);
+        if (found) setSelectedCustomer(found);
+      }
+      if (draft.fotoUrl) setFotoUrl(draft.fotoUrl);
+      setRestoredDraftNotice(true);
+    }
+  }, [customers, preselectedCustomer]);
+
+  // Save Draft automatically
+  useEffect(() => {
+    if (selectedCustomer || items.length > 1 || fotoUrl) {
+      saveSaleDraft({
+        customerId: selectedCustomer?.id,
+        fotoUrl,
+      });
+    }
+  }, [selectedCustomer, items, fotoUrl]);
+
+  // Handle Add Item
+  const handleAddItem = () => {
+    const nextProd = products.find((p) => !items.some((it) => it.productId === p.id)) || products[0];
+    setItems((prev) => [
+      ...prev,
+      {
+        id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+        productId: nextProd?.id || '',
+        unidadesInput: '',
+        kilajeInput: '',
+        precioOverride: '',
+        observacion: '',
+      },
+    ]);
+  };
+
+  // Handle Remove Item
+  const handleRemoveItem = (id: string) => {
+    if (items.length === 1) return;
+    setItems((prev) => prev.filter((it) => it.id !== id));
+  };
+
+  // Calculate Subtotal for an Item
+  const calculateItemSubtotal = (
+    productId: string,
+    uInput: string,
+    kgInput: string,
+    precioOverride: string
+  ) => {
+    const prod = products.find((p) => p.id === productId);
+    if (!prod) return { subtotal: 0, precioAplicado: 0, unidades: 0, kilajeReal: 0 };
+
+    const unidades = parseFloat(uInput.replace(',', '.')) || 0;
+    const kilajeReal = parseFloat(kgInput.replace(',', '.')) || 0;
+
+    let precioAplicado = prod.precios[activePriceList] || prod.precios.GENERAL;
+
+    // Custom customer prices
+    if (
+      selectedCustomer?.preciosPersonalizados &&
+      selectedCustomer.preciosPersonalizados[prod.id] !== undefined
+    ) {
+      precioAplicado = selectedCustomer.preciosPersonalizados[prod.id];
+    }
+
+    // Owner/Admin manual override
+    if (isDuenoOrAdmin && precioOverride.trim() !== '') {
+      const parsedOverride = parseFloat(precioOverride.replace(',', '.'));
+      if (!isNaN(parsedOverride) && parsedOverride >= 0) {
+        precioAplicado = parsedOverride;
+      }
+    }
+
+    let subtotal = 0;
+    if (prod.tipoVenta === 'POR_UNIDAD') {
+      subtotal = unidades * precioAplicado;
+    } else {
+      // POR_KILO or UNIDADES_INFORMATIVAS_COBRO_POR_KILO
+      subtotal = kilajeReal * precioAplicado;
+    }
+
+    return { subtotal, precioAplicado, unidades, kilajeReal };
+  };
+
+  // Computed Totals
+  let itemsSubtotalSum = 0;
+  const processedItems: BoletaItem[] = items.map((it) => {
+    const prod = products.find((p) => p.id === it.productId);
+    const { subtotal, precioAplicado, unidades, kilajeReal } = calculateItemSubtotal(
+      it.productId,
+      it.unidadesInput,
+      it.kilajeInput,
+      it.precioOverride
+    );
+
+    itemsSubtotalSum += subtotal;
+
+    return {
+      id: it.id,
+      productId: it.productId,
+      productName: prod ? prod.nombre : 'Producto',
+      tipoVenta: prod ? prod.tipoVenta : 'POR_KILO',
+      unidades,
+      kilajeReal,
+      unidadMedida: prod ? prod.unidadMedida : 'kg',
+      precioAplicado,
+      subtotal,
+      observacion: it.observacion,
+    };
+  });
+
+  const descuento = parseFloat(descuentoInput.replace(',', '.')) || 0;
+  const recargo = parseFloat(recargoInput.replace(',', '.')) || 0;
+
+  const totalBoleta = Math.max(0, itemsSubtotalSum - descuento + recargo);
+
+  // Sync Payment Inputs based on selected Payment Mode
+  useEffect(() => {
+    if (pagoTipo === 'EFECTIVO') {
+      setPagoEfectivoInput(String(totalBoleta));
+      setPagoTransferenciaInput('0');
+      setPagoOtrosInput('0');
+    } else if (pagoTipo === 'TRANSFERENCIA') {
+      setPagoEfectivoInput('0');
+      setPagoTransferenciaInput(String(totalBoleta));
+      setPagoOtrosInput('0');
+    } else if (pagoTipo === 'DEBE') {
+      setPagoEfectivoInput('0');
+      setPagoTransferenciaInput('0');
+      setPagoOtrosInput('0');
+    }
+  }, [pagoTipo, totalBoleta]);
+
+  const efecNum = parseFloat(pagoEfectivoInput.replace(',', '.')) || 0;
+  const transNum = parseFloat(pagoTransferenciaInput.replace(',', '.')) || 0;
+  const otrosNum = parseFloat(pagoOtrosInput.replace(',', '.')) || 0;
+
+  const totalPagado = efecNum + transNum + otrosNum;
+  const saldoRestante = Math.max(0, totalBoleta - totalPagado);
+
+  // Check Stock Exceeded Warning
+  let hasStockExceeded = false;
+  const stockExceededList: { productName: string; requested: string; available: string }[] = [];
+
+  processedItems.forEach((it) => {
+    const summary = stockSummary.find((s) => s.product.id === it.productId);
+    if (summary) {
+      if (summary.product.tipoControlStock === 'SOLO_UNIDADES') {
+        if (it.unidades > summary.unidadesDisponibles) {
+          hasStockExceeded = true;
+          stockExceededList.push({
+            productName: summary.product.nombre,
+            requested: `${it.unidades} u`,
+            available: `${summary.unidadesDisponibles} u`,
+          });
+        }
+      } else {
+        if (it.kilajeReal > summary.kilogramosDisponibles) {
+          hasStockExceeded = true;
+          stockExceededList.push({
+            productName: summary.product.nombre,
+            requested: `${it.kilajeReal} kg`,
+            available: `${summary.kilogramosDisponibles} kg`,
+          });
+        }
+      }
+    }
+  });
+
+  // Photo Handling
+  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setFotoUrl(event.target.result as string);
+          setPhotoError(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Generate Sample Photo for Fast Testing
+  const handleGenerateSampleBoletaPhoto = () => {
+    if (!selectedCustomer) return;
+    const custName = selectedCustomer.alias || selectedCustomer.nombre;
+    const num = `B-${String(Date.now()).slice(-5)}`;
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800">
+      <rect width="600" height="800" fill="#fcfbf7" rx="16"/>
+      <rect x="20" y="20" width="560" height="760" fill="none" stroke="#0f172a" stroke-width="3" stroke-dasharray="8,8"/>
+      <text x="300" y="70" font-family="sans-serif" font-size="24" font-weight="900" fill="#0f172a" text-anchor="middle">C&amp;C DISTRIBUIDORA DE CARNES</text>
+      <text x="300" y="100" font-family="sans-serif" font-size="16" font-weight="bold" fill="#059669" text-anchor="middle">BOLETA FÍSICA FOTO-CONFORMADA N° ${num}</text>
+      <line x1="40" y1="120" x2="560" y2="120" stroke="#cbd5e1" stroke-width="2"/>
+      
+      <text x="50" y="160" font-family="sans-serif" font-size="16" font-weight="bold" fill="#0f172a">CLIENTE: ${custName}</text>
+      <text x="50" y="190" font-family="sans-serif" font-size="14" fill="#64748b">DIRECCIÓN: ${selectedCustomer.direccion}</text>
+      <text x="50" y="215" font-family="sans-serif" font-size="14" fill="#64748b">FECHA: ${new Date().toLocaleDateString('es-AR')}</text>
+      
+      <rect x="40" y="240" width="520" height="340" fill="#ffffff" stroke="#e2e8f0" rx="10"/>
+      <text x="60" y="280" font-family="monospace" font-size="15" fill="#1e293b">• VENTA BOLETA VIRTUAL C&amp;C</text>
+      <text x="60" y="320" font-family="monospace" font-size="15" fill="#1e293b">• MONTO TOTAL: $ ${totalBoleta.toLocaleString('es-AR')}</text>
+      <text x="60" y="360" font-family="monospace" font-size="15" fill="#059669">• TOTAL ABONADO: $ ${totalPagado.toLocaleString('es-AR')}</text>
+
+      <circle cx="480" cy="650" r="60" fill="#059669" opacity="0.15"/>
+      <text x="480" y="655" font-family="sans-serif" font-size="16" font-weight="bold" fill="#047857" text-anchor="middle">RECIBIDO OK</text>
+    </svg>`;
+
+    setFotoUrl(`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`);
+    setPhotoError(false);
+  };
+
+  // Finalize Boleta Transaction
+  const handleFinalize = async () => {
+    if (!selectedCustomer) {
+      alert('Por favor seleccione un cliente.');
+      return;
+    }
+
+    if (processedItems.length === 0 || totalBoleta <= 0) {
+      alert('Debe agregar al menos un producto con importe superior a $0.');
+      return;
+    }
+
+    if (hasStockExceeded && isRepartidor && !stockJustification.trim()) {
+      alert('Esta venta supera el stock registrado. Ingrese una justificación obligatoria para continuar.');
+      return;
+    }
+
+    const numeroBoleta = `B-${String(Date.now()).slice(-6)}`;
+
+    const { virtualBoleta } = finalizeVirtualBoleta({
+      numeroBoleta,
+      customer: selectedCustomer,
+      branchId: selectedBranch?.id,
+      branchName: selectedBranch?.nombre,
+      items: processedItems,
+      subtotal: itemsSubtotalSum,
+      descuento,
+      recargo,
+      total: totalBoleta,
+      pagoEfectivo: efecNum,
+      pagoTransferencia: transNum,
+      pagoOtros: otrosNum,
+      fotoBoletaFisicaUrl: fotoUrl, // optional
+      usuario: currentUser.nombre,
+      listaPrecioAplicada: activePriceList,
+    });
+
+    // Generate 1080px mobile-optimized image automatically
+    try {
+      const generatedImageUrl = await generateBoletaImage(virtualBoleta);
+      virtualBoleta.comprobanteImagenUrl = generatedImageUrl;
+
+      const storedBoletas = getStoredVirtualBoletas();
+      const bIdx = storedBoletas.findIndex((b) => b.id === virtualBoleta.id);
+      if (bIdx !== -1) {
+        storedBoletas[bIdx].comprobanteImagenUrl = generatedImageUrl;
+        saveVirtualBoletas(storedBoletas);
+      }
+    } catch (err) {
+      console.error('Error generando imagen de boleta:', err);
+    }
+
+    clearSaleDraft();
+    setCompletedBoleta(virtualBoleta);
+    onSaleCompleted();
+  };
+
+  return (
+    <div className="space-y-6 max-w-5xl mx-auto pb-12">
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center space-x-2">
+            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5" /> Módulo Express
+            </span>
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">
+              Boleta Virtual C&C
+            </h1>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-300 mt-1">
+            Generación de comprobante digital, cálculo automático por lista de precios y descuento de stock semanal.
+          </p>
+        </div>
+
+        {restoredDraftNotice && (
+          <div className="bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs px-3 py-1.5 rounded-xl flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Borrador autoguardado recuperado</span>
+          </div>
+        )}
+      </div>
+
+      {/* 1. SELECCIÓN DE CLIENTE Y SUCURSAL */}
+      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+        <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2 border-b border-slate-100 pb-3">
+          <UserCheck className="w-5 h-5 text-blue-600" />
+          <span>1. Selección de Cliente y Condición de Venta</span>
+        </h2>
+
+        {!selectedCustomer ? (
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="w-5 h-5 absolute left-3.5 top-3 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar cliente por nombre, fantasía, dirección o zona..."
+                value={customerSearchQuery}
+                onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 text-sm font-medium"
+              />
+            </div>
+
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+              {customers
+                .filter(
+                  (c) =>
+                    c.nombre.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
+                    (c.alias && c.alias.toLowerCase().includes(customerSearchQuery.toLowerCase())) ||
+                    c.direccion.toLowerCase().includes(customerSearchQuery.toLowerCase())
+                )
+                .map((cust) => (
+                  <div
+                    key={cust.id}
+                    onClick={() => setSelectedCustomer(cust)}
+                    className="p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 transition cursor-pointer flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="font-extrabold text-slate-900 text-sm">
+                        {cust.alias || cust.nombre}
+                      </p>
+                      <p className="text-xs text-slate-500">{cust.direccion} - {cust.zonaRuta}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-md">
+                        Lista: {cust.listaPrecioTipo || 'GENERAL'}
+                      </span>
+                      <p className="text-xs font-black text-slate-900 mt-1">
+                        Deuda: {formatCurrency(cust.saldoActual)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-black tracking-wider text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                  Cliente Seleccionado
+                </span>
+                <h3 className="text-lg font-black text-slate-900 mt-1">
+                  {selectedCustomer.alias || selectedCustomer.nombre}
+                </h3>
+                <p className="text-xs text-slate-600 font-medium">
+                  {selectedCustomer.direccion} ({selectedCustomer.localidad}) - {selectedCustomer.zonaRuta}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedCustomer(null)}
+                className="text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-200 hover:bg-slate-300 px-3 py-1.5 rounded-lg transition cursor-pointer"
+              >
+                Cambiar Cliente
+              </button>
+            </div>
+
+            {/* Branch Picker if Multiple Sucursales Exist */}
+            {selectedCustomer.sucursales && selectedCustomer.sucursales.length > 0 && (
+              <div className="pt-2 border-t border-slate-200">
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                  Sucursal / Local de Entrega:
+                </label>
+                <select
+                  value={selectedBranch?.id || ''}
+                  onChange={(e) => {
+                    const b = selectedCustomer.sucursales?.find((br) => br.id === e.target.value);
+                    setSelectedBranch(b || null);
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                >
+                  <option value="">-- Local Principal / Casa Central --</option>
+                  {selectedCustomer.sucursales.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.nombre} - {b.direccion} (Deuda local: {formatCurrency(b.saldoActual)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Commercial Info Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-2 border-t border-slate-200/80">
+              <div className="bg-white p-2 rounded-lg border border-slate-200">
+                <span className="text-slate-500 font-bold block">Lista Asignada:</span>
+                <span className="font-black text-slate-900">{activePriceList}</span>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-slate-200">
+                <span className="text-slate-500 font-bold block">Saldo Actual Cuenta:</span>
+                <span className="font-black text-slate-900">{formatCurrency(selectedCustomer.saldoActual)}</span>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-slate-200">
+                <span className="text-slate-500 font-bold block">Forma Pago Habitual:</span>
+                <span className="font-black text-slate-900">{selectedCustomer.formaPagoHabitual || 'DEBE'}</span>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-slate-200">
+                <span className="text-slate-500 font-bold block">Contacto:</span>
+                <span className="font-bold text-slate-900 truncate block">{selectedCustomer.telefono || 'Sin tel'}</span>
+              </div>
+            </div>
+
+            {/* Owner / Admin List Override */}
+            {isDuenoOrAdmin && (
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-center justify-between text-xs">
+                <span className="font-bold text-amber-900">
+                  👑 Permiso Especial: Cambiar Lista de Precios
+                </span>
+                <select
+                  value={activePriceList}
+                  onChange={(e) => setActivePriceList(e.target.value as PriceListType)}
+                  className="bg-white border border-amber-300 font-bold text-amber-900 rounded-lg px-2.5 py-1"
+                >
+                  <option value="GENERAL">Lista General</option>
+                  <option value="MAYORISTA">Lista Mayorista</option>
+                  <option value="ESPECIAL">Lista Especial</option>
+                  <option value="PERSONALIZADA">Lista Personalizada</option>
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 2. CARGA DE PRODUCTOS Y KILAJES */}
+      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2">
+            <FileText className="w-5 h-5 text-emerald-600" />
+            <span>2. Detalle de Productos y Kilajes Reales</span>
+          </h2>
+
+          <button
+            onClick={handleAddItem}
+            className="flex items-center space-x-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl shadow-2xs transition cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Agregar Producto</span>
+          </button>
+        </div>
+
+        {/* Product Items Rows */}
+        <div className="space-y-3">
+          {items.map((item, index) => {
+            const prod = products.find((p) => p.id === item.productId);
+            const stockItem = stockSummary.find((s) => s.product.id === item.productId);
+
+            const { subtotal, precioAplicado } = calculateItemSubtotal(
+              item.productId,
+              item.unidadesInput,
+              item.kilajeInput,
+              item.precioOverride
+            );
+
+            return (
+              <div
+                key={item.id}
+                className="bg-slate-50 p-3 sm:p-4 rounded-xl border border-slate-200 space-y-3 relative group"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                  {/* Selector Producto */}
+                  <div className="md:col-span-4">
+                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
+                      Producto #{index + 1}
+                    </label>
+                    <select
+                      value={item.productId}
+                      onChange={(e) => {
+                        const newId = e.target.value;
+                        setItems((prev) =>
+                          prev.map((it) => (it.id === item.id ? { ...it, productId: newId } : it))
+                        );
+                      }}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
+                    >
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nombre} ({p.tipoVenta === 'POR_UNIDAD' ? 'Por Unidad' : 'Por Kg'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Campo Unidades */}
+                  <div className="md:col-span-2">
+                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
+                      Unidades
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={item.unidadesInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setItems((prev) =>
+                          prev.map((it) => (it.id === item.id ? { ...it, unidadesInput: val } : it))
+                        );
+                      }}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-extrabold text-slate-900"
+                    />
+                  </div>
+
+                  {/* Campo Kilaje Real */}
+                  <div className="md:col-span-2">
+                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
+                      Kilaje Real (kg)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={item.kilajeInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setItems((prev) =>
+                          prev.map((it) => (it.id === item.id ? { ...it, kilajeInput: val } : it))
+                        );
+                      }}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-extrabold text-emerald-800"
+                    />
+                  </div>
+
+                  {/* Precio Aplicado */}
+                  <div className="md:col-span-2">
+                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
+                      Precio Lista ($)
+                    </label>
+                    {isDuenoOrAdmin ? (
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder={String(precioAplicado)}
+                        value={item.precioOverride}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setItems((prev) =>
+                            prev.map((it) => (it.id === item.id ? { ...it, precioOverride: val } : it))
+                          );
+                        }}
+                        className="w-full bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 text-xs font-black text-amber-900"
+                      />
+                    ) : (
+                      <div className="bg-slate-200 border border-slate-300 rounded-xl px-3 py-2 text-xs font-black text-slate-700">
+                        {formatCurrency(precioAplicado)}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Subtotal & Delete */}
+                  <div className="md:col-span-2 flex items-center justify-between space-x-2">
+                    <div className="text-right min-w-0">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Subtotal</span>
+                      <span className="text-sm font-black text-slate-900 truncate block">
+                        {formatCurrency(subtotal)}
+                      </span>
+                    </div>
+
+                    {items.length > 1 && (
+                      <button
+                        onClick={() => handleRemoveItem(item.id)}
+                        className="text-slate-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition cursor-pointer shrink-0"
+                        title="Eliminar producto"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Stock Indicator Strip */}
+                {stockItem && (
+                  <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200/80">
+                    <span className="text-slate-500 font-medium">
+                      Stock Semanal Disponible:{' '}
+                      <strong className="text-slate-800">
+                        {stockItem.unidadesDisponibles} u / {stockItem.kilogramosDisponibles.toLocaleString('es-AR')} kg
+                      </strong>
+                    </span>
+                    <span
+                      className={`font-black px-2 py-0.5 rounded-md text-[10px] uppercase ${
+                        stockItem.estadoSemaforo === 'VERDE'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : stockItem.estadoSemaforo === 'AMARILLO'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {stockItem.estadoSemaforo}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Warning if Sale exceeds Stock */}
+        {hasStockExceeded && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 space-y-2">
+            <div className="flex items-center space-x-2 text-red-800 font-extrabold text-xs">
+              <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
+              <span>ADVERTENCIA: Esta venta supera el stock semanal disponible en depósito</span>
+            </div>
+            <ul className="text-xs text-red-700 list-disc list-inside space-y-1 font-medium">
+              {stockExceededList.map((st, i) => (
+                <li key={i}>
+                  <strong>{st.productName}</strong> - Solicitado: {st.requested} | Disponible: {st.available}
+                </li>
+              ))}
+            </ul>
+            {isRepartidor && (
+              <div className="pt-2">
+                <label className="text-xs font-bold text-red-900 block mb-1">
+                  Justificación obligatoria del Repartidor para continuar:
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Se retiró mercadería fresca directo de frigorífico..."
+                  value={stockJustification}
+                  onChange={(e) => setStockJustification(e.target.value)}
+                  className="w-full bg-white border border-red-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. RESUMEN Y TOTAL DE LA BOLETA */}
+        <div className="bg-slate-900 text-white rounded-xl p-4 sm:p-5 space-y-3">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Subtotal Productos</p>
+              <p className="text-lg font-black text-white">{formatCurrency(itemsSubtotalSum)}</p>
+            </div>
+
+            <div className="flex items-center space-x-3 text-xs">
+              <div>
+                <label className="text-slate-400 font-bold block mb-0.5">Descuento ($)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={descuentoInput}
+                  onChange={(e) => setDescuentoInput(e.target.value)}
+                  className="w-24 bg-slate-800 border border-slate-700 text-emerald-400 font-bold rounded-lg px-2.5 py-1 text-xs"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 font-bold block mb-0.5">Recargo ($)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={recargoInput}
+                  onChange={(e) => setRecargoInput(e.target.value)}
+                  className="w-24 bg-slate-800 border border-slate-700 text-amber-400 font-bold rounded-lg px-2.5 py-1 text-xs"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-base sm:text-lg font-black uppercase text-white tracking-wider">
+              TOTAL FINAL BOLETA:
+            </span>
+            <span className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight">
+              {formatCurrency(totalBoleta)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. FORMA DE PAGO Y DEUDAS */}
+      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+        <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2 border-b border-slate-100 pb-3">
+          <DollarSign className="w-5 h-5 text-emerald-600" />
+          <span>3. Selección de Forma de Pago</span>
+        </h2>
+
+        {/* Selector Modos de Pago */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {[
+            { id: 'DEBE', label: 'No Pagó (A Cta)', color: 'border-red-300 bg-red-50 text-red-800' },
+            { id: 'EFECTIVO', label: 'Efectivo Completo', color: 'border-emerald-300 bg-emerald-50 text-emerald-800' },
+            { id: 'TRANSFERENCIA', label: 'Transferencia Compl.', color: 'border-blue-300 bg-blue-50 text-blue-800' },
+            { id: 'PARCIAL', label: 'Pago Parcial', color: 'border-amber-300 bg-amber-50 text-amber-800' },
+            { id: 'MIXTO', label: 'Pago Mixto', color: 'border-purple-300 bg-purple-50 text-purple-800' },
+          ].map((mode) => (
+            <button
+              key={mode.id}
+              onClick={() => setPagoTipo(mode.id as any)}
+              className={`p-3 rounded-xl border text-xs font-extrabold text-center transition cursor-pointer ${
+                pagoTipo === mode.id
+                  ? `${mode.color} ring-2 ring-slate-900 shadow-sm`
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Inputs para Pago Parcial o Mixto */}
+        {(pagoTipo === 'MIXTO' || pagoTipo === 'PARCIAL') && (
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div>
+              <label className="font-extrabold text-slate-700 block mb-1">Importe Efectivo ($)</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={pagoEfectivoInput}
+                onChange={(e) => setPagoEfectivoInput(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900"
+              />
+            </div>
+            <div>
+              <label className="font-extrabold text-slate-700 block mb-1">Importe Transferencia ($)</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={pagoTransferenciaInput}
+                onChange={(e) => setPagoTransferenciaInput(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900"
+              />
+            </div>
+            <div>
+              <label className="font-extrabold text-slate-700 block mb-1">Otro Medio ($)</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={pagoOtrosInput}
+                onChange={(e) => setPagoOtrosInput(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Total Pagado vs Saldo Pendiente Summary */}
+        <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
+          <div>
+            <span className="text-slate-500 font-bold block">Total Abonado Hoy:</span>
+            <span className="font-black text-emerald-700 text-base">{formatCurrency(totalPagado)}</span>
+          </div>
+          <div>
+            <span className="text-slate-500 font-bold block">Saldo Pendiente esta Boleta:</span>
+            <span className="font-black text-red-600 text-base">{formatCurrency(saldoRestante)}</span>
+          </div>
+          <div>
+            <span className="text-slate-500 font-bold block">Nuevo Saldo Cuenta Corriente:</span>
+            <span className="font-black text-slate-900 text-base">
+              {formatCurrency((selectedCustomer?.saldoActual || 0) + saldoRestante)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. ADJUNTAR DOCUMENTO U OBSERVACIÓN (OPCIONAL) */}
+      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+        <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center space-x-2">
+            <Camera className="w-5 h-5 text-blue-600" />
+            <span>4. Adjuntar Documento u Observación (Opcional - Excepcional)</span>
+          </div>
+          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full uppercase">
+            No Obligatorio
+          </span>
+        </h2>
+
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          {!fotoUrl ? (
+            <div className="w-full sm:w-auto flex flex-wrap gap-2">
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoCapture}
+                className="hidden"
+              />
+              <button
+                onClick={() => cameraInputRef.current?.click()}
+                className="flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3.5 py-2 rounded-xl border border-slate-300 transition cursor-pointer"
+              >
+                <Camera className="w-4 h-4 text-slate-600" />
+                <span>Tomar Foto Adjunta</span>
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoCapture}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3.5 py-2 rounded-xl border border-slate-300 transition cursor-pointer"
+              >
+                <span>Subir de Galería</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between w-full bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-300 shrink-0 bg-slate-200">
+                  <img src={fotoUrl} alt="Adjunto" className="w-full h-full object-cover" />
+                </div>
+                <div>
+                  <p className="text-xs font-extrabold text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Documento Adjunto
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-medium">Se incluirá como referencia en la boleta</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setFotoUrl('')}
+                className="text-xs font-bold text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-200 transition cursor-pointer"
+              >
+                Quitar Adjunto
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* FINALIZAR BOTÓN */}
+      <div className="pt-2">
+        <button
+          onClick={handleFinalize}
+          disabled={!selectedCustomer || totalBoleta <= 0}
+          className="w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 disabled:opacity-50 text-white font-black text-base py-4 rounded-2xl shadow-xl transition cursor-pointer flex items-center justify-center space-x-3"
+        >
+          <CheckCircle2 className="w-6 h-6" />
+          <span>FINALIZAR VENTA Y EMITIR BOLETA VIRTUAL</span>
+        </button>
+      </div>
+
+      {/* RENDER VIRTUAL BOLETA MODAL AFTER COMPLETION */}
+      {completedBoleta && (
+        <VirtualBoletaModal
+          boleta={completedBoleta}
+          customerPhone={selectedCustomer?.telefono}
+          onClose={() => {
+            setCompletedBoleta(null);
+            setSelectedCustomer(null);
+            setSelectedBranch(null);
+            setItems([]);
+            setPagoEfectivoInput('0');
+            setPagoTransferenciaInput('0');
+            setPagoOtrosInput('0');
+            setFotoUrl('');
+            setStockJustification('');
+          }}
+          onViewImage={onViewImage}
+          currentUser={currentUser}
+        />
+      )}
+    </div>
+  );
+};

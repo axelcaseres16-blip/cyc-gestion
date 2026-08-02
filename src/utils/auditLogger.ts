@@ -53,7 +53,7 @@ export function getAuditLogs(): ComprehensiveAuditLog[] {
 export function recordAuditLog(logData: {
   usuario: string;
   username?: string;
-  rol: UserRole;
+  rol?: UserRole;
   accion: string;
   tipoAccion: ComprehensiveAuditLog['tipoAccion'];
   customerId?: string;
@@ -73,7 +73,7 @@ export function recordAuditLog(logData: {
       hora: now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       usuario: logData.usuario,
       username: logData.username || logData.usuario.toLowerCase().replace(/\s+/g, ''),
-      rol: logData.rol,
+      rol: logData.rol || 'ADMINISTRADOR',
       accion: logData.accion,
       tipoAccion: logData.tipoAccion,
       customerId: logData.customerId,

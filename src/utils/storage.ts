@@ -109,6 +109,36 @@ export function clearSaleDraft(): void {
 // Datos de demostración iniciales ultra realistas para C&C Gestión (Distribuidora de achuras y carnes)
 const MOCK_INITIAL_CUSTOMERS: Customer[] = [
   {
+    id: 'cli_lopez',
+    nombre: 'Horacio López',
+    alias: 'Carnicería López',
+    cuitDni: '20-30123456-7',
+    telefono: '1144556677',
+    direccion: 'Av. Rivadavia 8500',
+    localidad: 'Morón',
+    referenciaUbicacion: 'Esquina Alvarado',
+    zonaRuta: 'Ruta 1 - Morón / Haedo',
+    frecuenciaVisita: 'SEMANAL',
+    categoria: 'CARNICERIA',
+    estado: 'ACTIVO',
+    limiteCredito: 1000000,
+    diasTopeCredito: 14,
+    listaPrecioTipo: 'PERSONALIZADA',
+    preciosPersonalizados: {
+      prod_higado: 5005,
+      prod_chinchulin: 6000,
+      prod_centro: 7000,
+    },
+    observaciones: 'Cliente para prueba oficial de Boleta Virtual.',
+    proximaVisita: {
+      fecha: new Date().toISOString().split('T')[0],
+      motivo: 'Entrega de mercadería',
+      option: 'PROXIMO_REPARTO',
+    },
+    createdAt: '2026-01-01T08:00:00.000Z',
+    updatedAt: '2026-08-01T08:00:00.000Z',
+  },
+  {
     id: 'cli_1',
     nombre: 'Juan Carlos Rodríguez',
     alias: 'Carnicería Don Juan',
