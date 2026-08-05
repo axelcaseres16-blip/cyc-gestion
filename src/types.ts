@@ -29,6 +29,10 @@ export interface Product {
   stockMinimoUnidades: number;
   stockMinimoKg: number;
   activo: boolean;
+  orden?: number;
+  usaUnidades?: boolean;
+  usaKilogramos?: boolean;
+  cobroPor?: 'KG' | 'UNIDAD';
 }
 
 export interface CustomerBranch {

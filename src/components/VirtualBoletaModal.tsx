@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { VirtualBoleta, AppUser, Customer } from '../types';
+import { VirtualBoleta, AppUser } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { generateCustomerVirtualBoletaWpMessage } from '../utils/stockAndBoletasManager';
 import {
@@ -30,6 +30,9 @@ import {
   Edit3,
   Copy,
   Check,
+  Download,
+  ExternalLink,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface VirtualBoletaModalProps {
@@ -40,6 +43,34 @@ interface VirtualBoletaModalProps {
   customerPhone?: string;
   initialEnvioEstado?: EnvioEstado;
   activeViewName?: string;
+}
+
+// Convert Base64 / DataURL to Blob
+function dataUrlToBlob(dataUrl: string): Blob {
+  try {
+    const parts = dataUrl.split(',');
+    const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
+    const bstr = atob(parts[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  } catch (e) {
+    console.error('Error converting dataUrl to blob:', e);
+    return new Blob([], { type: 'image/png' });
+  }
+}
+
+// Helper to trigger direct file download
+function triggerImageDownload(dataUrl: string, fileName: string) {
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
@@ -60,10 +91,12 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
 
   const [envioEstado, setEnvioEstado] = useState<EnvioEstado>(initialEnvioEstado);
   const [showPhoneErrorModal, setShowPhoneErrorModal] = useState(false);
+  const [showFallbackInstructionModal, setShowFallbackInstructionModal] = useState(false);
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [editedPhoneValue, setEditedPhoneValue] = useState(customerPhone);
   const [copiedSuccess, setCopiedSuccess] = useState(false);
   const [showConfirmReturnPrompt, setShowConfirmReturnPrompt] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
 
   // Sync state to persistent storage cc_last_completed_sale
   useEffect(() => {
@@ -115,8 +148,12 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
     statusCardColor = 'bg-red-50 border-red-200 text-red-800';
   }
 
-  // Handle WhatsApp button press with phone validation
-  const handleSendToCustomerWp = () => {
+  const cleanCustomerName = (boleta.customerName || 'Cliente').replace(/[^a-zA-Z0-9]/g, '-');
+  const fileName = `Boleta-CYC-${boleta.numeroBoleta}-${cleanCustomerName}.png`;
+  const textMessage = generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta);
+
+  // Native Image Sharing Handler via Web Share API with File Attachment
+  const handleShareImageNative = async () => {
     const norm = normalizeArgentineWhatsAppNumber(currentPhone);
     setPhoneResult(norm);
 
@@ -125,15 +162,89 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
       return;
     }
 
-    const text = generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta);
-    const { url } = buildValidatedWhatsAppUrl(currentPhone, text);
+    setIsSharing(true);
 
+    try {
+      if (boleta.comprobanteImagenUrl) {
+        const blob = dataUrlToBlob(boleta.comprobanteImagenUrl);
+        const file = new File([blob], fileName, { type: 'image/png' });
+
+        // Check if browser supports sharing files natively
+        if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [file] })) {
+          setEnvioEstado('COMPARTIR_ABIERTO');
+          updatePendingSaleEnvioEstado('COMPARTIR_ABIERTO');
+
+          await navigator.share({
+            files: [file],
+            title: `Boleta Virtual C&C #${boleta.numeroBoleta}`,
+            text: textMessage,
+          });
+
+          setEnvioEstado('ENVIADO_CONFIRMADO');
+          updatePendingSaleEnvioEstado('ENVIADO_CONFIRMADO');
+          setIsSharing(false);
+          return;
+        }
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        setIsSharing(false);
+        return;
+      }
+      console.warn('Native file share error, proceeding to fallback:', err);
+    }
+
+    // FALLBACK PROCEDURE IF FILE SHARE IS UNSUPPORTED OR FAILS:
+    // 1. Download image PNG to device
+    if (boleta.comprobanteImagenUrl) {
+      triggerImageDownload(boleta.comprobanteImagenUrl, fileName);
+    }
+
+    // 2. Copy text message to clipboard
+    try {
+      await navigator.clipboard.writeText(textMessage);
+      setCopiedSuccess(true);
+      setTimeout(() => setCopiedSuccess(false), 3000);
+    } catch (e) {
+      console.warn('Clipboard copy warning:', e);
+    }
+
+    // 3. Open WhatsApp link for the customer
+    const { url } = buildValidatedWhatsAppUrl(currentPhone, textMessage);
+    if (url) {
+      setEnvioEstado('COMPARTIR_ABIERTO');
+      updatePendingSaleEnvioEstado('COMPARTIR_ABIERTO');
+      window.open(url, '_blank');
+    }
+
+    setIsSharing(false);
+    setShowFallbackInstructionModal(true);
+  };
+
+  // Direct Text Only Chat Handler
+  const handleOpenDirectChat = () => {
+    const norm = normalizeArgentineWhatsAppNumber(currentPhone);
+    setPhoneResult(norm);
+
+    if (!norm.isValid) {
+      setShowPhoneErrorModal(true);
+      return;
+    }
+
+    const { url } = buildValidatedWhatsAppUrl(currentPhone, textMessage);
     if (url) {
       setEnvioEstado('COMPARTIR_ABIERTO');
       updatePendingSaleEnvioEstado('COMPARTIR_ABIERTO');
       window.open(url, '_blank');
     } else {
       setShowPhoneErrorModal(true);
+    }
+  };
+
+  // Download image handler
+  const handleDownloadImage = () => {
+    if (boleta.comprobanteImagenUrl) {
+      triggerImageDownload(boleta.comprobanteImagenUrl, fileName);
     }
   };
 
@@ -159,23 +270,31 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
 
     if (norm.isValid) {
       setShowPhoneErrorModal(false);
-      // Auto trigger send after editing to valid phone
-      const text = generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta);
-      const url = `https://wa.me/${norm.normalized}?text=${encodeURIComponent(text)}`;
-      setEnvioEstado('COMPARTIR_ABIERTO');
-      updatePendingSaleEnvioEstado('COMPARTIR_ABIERTO');
-      window.open(url, '_blank');
+      handleShareImageNative();
     }
   };
 
   // Share via native Web Share API
   const handleShareOther = async () => {
-    const text = generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta);
-    if (navigator.share) {
+    if (typeof navigator !== 'undefined' && navigator.share) {
       try {
+        if (boleta.comprobanteImagenUrl) {
+          const blob = dataUrlToBlob(boleta.comprobanteImagenUrl);
+          const file = new File([blob], fileName, { type: 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: `Boleta Virtual #${boleta.numeroBoleta} - Menudencias C&C`,
+              text: textMessage,
+            });
+            setEnvioEstado('ENVIADO_CONFIRMADO');
+            updatePendingSaleEnvioEstado('ENVIADO_CONFIRMADO');
+            return;
+          }
+        }
         await navigator.share({
           title: `Boleta Virtual #${boleta.numeroBoleta} - Menudencias C&C`,
-          text: text,
+          text: textMessage,
         });
         setEnvioEstado('ENVIADO_CONFIRMADO');
         updatePendingSaleEnvioEstado('ENVIADO_CONFIRMADO');
@@ -188,8 +307,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
   };
 
   const handleCopyText = () => {
-    const text = generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta);
-    navigator.clipboard?.writeText(text);
+    navigator.clipboard?.writeText(textMessage);
     setCopiedSuccess(true);
     setTimeout(() => setCopiedSuccess(false), 2500);
   };
@@ -283,7 +401,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
               <button
                 onClick={() => {
                   setShowConfirmReturnPrompt(false);
-                  handleSendToCustomerWp();
+                  handleShareImageNative();
                 }}
                 className="px-3 py-2 bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold rounded-xl transition cursor-pointer"
               >
@@ -369,22 +487,30 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
             </div>
           </div>
 
-          {/* Generated 1080px Image Preview Container */}
+          {/* Generated PNG Image Preview Container */}
           {boleta.comprobanteImagenUrl ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-emerald-600" /> Comprobante Digital Generado (1080px)
+                  <ImageIcon className="w-4 h-4 text-emerald-600" /> Imagen del Comprobante Generado (PNG)
                 </h4>
-                <button
-                  onClick={() => onViewImage && onViewImage(boleta.comprobanteImagenUrl!, `Comprobante #${boleta.numeroBoleta}`)}
-                  className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
-                >
-                  <Eye className="w-4 h-4" /> Ver en Grande
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDownloadImage}
+                    className="text-xs font-bold text-slate-700 hover:text-slate-900 flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg border border-slate-300 transition"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-600" /> Guardar PNG
+                  </button>
+                  <button
+                    onClick={() => onViewImage && onViewImage(boleta.comprobanteImagenUrl!, `Comprobante #${boleta.numeroBoleta}`)}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4" /> Ver en Grande
+                  </button>
+                </div>
               </div>
 
-              <div className="bg-slate-900 rounded-2xl p-2 border border-slate-700 overflow-hidden shadow-lg max-h-72 flex justify-center">
+              <div className="bg-slate-900 rounded-2xl p-2 border border-slate-700 overflow-hidden shadow-lg max-h-72 flex justify-center relative group">
                 <img
                   src={boleta.comprobanteImagenUrl}
                   alt={`Comprobante ${boleta.numeroBoleta}`}
@@ -445,42 +571,115 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
         {/* Modal Action Buttons Footer */}
         <div className="bg-slate-100 px-4 sm:px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           
-          <button
-            onClick={handleShareOther}
-            className="w-full sm:w-auto flex items-center justify-center space-x-1.5 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-3.5 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
-          >
-            <Share2 className="w-4 h-4 text-slate-600" />
-            <span>Compartir por otro medio</span>
-          </button>
-
-          <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
-            {boleta.comprobanteImagenUrl && (
-              <button
-                onClick={() => onViewImage && onViewImage(boleta.comprobanteImagenUrl!, `Comprobante #${boleta.numeroBoleta}`)}
-                className="w-full sm:w-auto flex items-center justify-center space-x-1.5 text-xs font-bold bg-slate-200 hover:bg-slate-300 text-slate-900 px-3.5 py-2.5 rounded-xl transition cursor-pointer"
-              >
-                <Eye className="w-4 h-4" />
-                <span>Ver Comprobante</span>
-              </button>
-            )}
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={handleDownloadImage}
+              className="flex-1 sm:flex-initial flex items-center justify-center space-x-1 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-3 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
+              title="Guardar archivo PNG en el dispositivo"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span>Guardar PNG</span>
+            </button>
 
             <button
-              onClick={handleSendToCustomerWp}
-              className="w-full sm:w-auto flex items-center justify-center space-x-2 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl shadow-md transition cursor-pointer"
+              onClick={handleCopyText}
+              className="flex-1 sm:flex-initial flex items-center justify-center space-x-1 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-3 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
+            >
+              {copiedSuccess ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-600" />}
+              <span>{copiedSuccess ? '¡Copiado!' : 'Copiar Texto'}</span>
+            </button>
+
+            <button
+              onClick={handleShareOther}
+              className="flex-1 sm:flex-initial flex items-center justify-center space-x-1 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-3 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
+            >
+              <Share2 className="w-3.5 h-3.5 text-slate-600" />
+              <span>Otros</span>
+            </button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
+            {/* PRIMARY BUTTON: SHARE PNG IMAGE TO WHATSAPP VIA NATIVE SHARE */}
+            <button
+              onClick={handleShareImageNative}
+              disabled={isSharing}
+              className="w-full sm:w-auto flex items-center justify-center space-x-2 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl shadow-md transition cursor-pointer active:scale-95"
             >
               <MessageSquare className="w-4 h-4" />
-              <span>Enviar al cliente por WhatsApp</span>
+              <span>{isSharing ? 'Preparando...' : 'Compartir imagen por WhatsApp'}</span>
+            </button>
+
+            {/* SECONDARY BUTTON: OPEN WA DIRECT CHAT TEXT */}
+            <button
+              onClick={handleOpenDirectChat}
+              className="w-full sm:w-auto flex items-center justify-center space-x-1.5 text-xs font-bold bg-slate-200 hover:bg-slate-300 text-slate-900 px-3.5 py-2.5 rounded-xl transition cursor-pointer"
+              title="Abrir chat del cliente directamente por texto"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-slate-700" />
+              <span>Abrir chat</span>
             </button>
 
             <button
               onClick={handleFinishAndNextCustomer}
               className="w-full sm:w-auto flex items-center justify-center space-x-1.5 text-xs font-black bg-slate-900 hover:bg-black text-white px-4 py-2.5 rounded-xl transition cursor-pointer"
             >
-              <span>Ir al siguiente cliente</span>
+              <span>Siguiente</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
+
+        {/* Modal Instruction Fallback Modal (when file share isn't supported) */}
+        {showFallbackInstructionModal && (
+          <div className="absolute inset-0 z-60 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-emerald-300 space-y-4">
+              <div className="flex items-center space-x-3 text-emerald-700 border-b border-slate-100 pb-3">
+                <div className="p-2 bg-emerald-100 rounded-xl">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">Imagen Guardada en Descargas</h3>
+                  <p className="text-xs text-slate-500">Comprobante PNG listo para adjuntar</p>
+                </div>
+              </div>
+
+              <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200 text-xs text-emerald-900 space-y-2">
+                <p className="font-extrabold text-sm">
+                  1. La imagen PNG de la boleta fue descargada en tu teléfono / dispositivo.
+                </p>
+                <p className="font-extrabold text-sm">
+                  2. El mensaje del resumen ya fue copiado al portapapeles.
+                </p>
+                <p className="text-slate-700 font-medium pt-1">
+                  En el chat de WhatsApp del cliente, tocá el ícono de <strong>Adjuntar (clip / cámara)</strong> y seleccioná la imagen descargada desde la <strong>Galería</strong>.
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setShowFallbackInstructionModal(false);
+                    const norm = normalizeArgentineWhatsAppNumber(currentPhone);
+                    if (norm.isValid) {
+                      const { url } = buildValidatedWhatsAppUrl(currentPhone, textMessage);
+                      if (url) window.open(url, '_blank');
+                    }
+                  }}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 rounded-xl transition cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Ir a WhatsApp</span>
+                </button>
+                <button
+                  onClick={() => setShowFallbackInstructionModal(false)}
+                  className="px-4 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs py-3 rounded-xl transition cursor-pointer"
+                >
+                  Entendido
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modal Error de Teléfono Inválido / Editar Teléfono (Validación Estricta) */}
         {showPhoneErrorModal && (

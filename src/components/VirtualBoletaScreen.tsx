@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   CustomerWithBalance,
   CustomerBranch,
@@ -7,40 +7,33 @@ import {
   BoletaItem,
   VirtualBoleta,
   AppUser,
-  PaymentMethod,
 } from '../types';
 import {
   getStoredProducts,
   getStockSummaryForPeriod,
   finalizeVirtualBoleta,
-  getStoredVirtualBoletas,
-  saveVirtualBoletas,
 } from '../utils/stockAndBoletasManager';
 import { generateBoletaImage } from '../utils/boletaImageGenerator';
-import {
-  saveSaleDraft,
-  getSaleDraft,
-  clearSaleDraft,
-} from '../utils/storage';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatCurrency } from '../utils/formatters';
 import { VirtualBoletaModal } from './VirtualBoletaModal';
 import {
   Search,
-  Plus,
-  Trash2,
-  Camera,
   CheckCircle2,
   AlertTriangle,
-  FileText,
-  Building2,
   DollarSign,
-  UserCheck,
-  Zap,
-  MessageSquare,
-  ShieldAlert,
-  Info,
+  X,
   RefreshCw,
-  Sparkles,
+  Layers,
+  FileCheck,
+  Edit3,
+  Eye,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  User,
+  Building2,
+  Calendar,
+  Lock,
 } from 'lucide-react';
 
 interface VirtualBoletaScreenProps {
@@ -51,6 +44,36 @@ interface VirtualBoletaScreenProps {
   onViewImage?: (url: string, title: string) => void;
 }
 
+const DRAFT_KEY_V4 = 'cyc_boleta_physical_sheet_v4';
+
+// EXACT 24 CANONICAL PRODUCTS IN EXACT REQUESTED ORDER
+const CANONICAL_24_NAMES = [
+  'Higado',
+  'Corazon',
+  'Lengua',
+  'Quijada',
+  'Rabo',
+  'Riñon',
+  'Bofe',
+  'Centro',
+  'Chinchulin',
+  'Mondongo',
+  'Tripa',
+  'Rueda',
+  'Seso',
+  'Molleja',
+  'Gañote',
+  'Pechito',
+  'Carre',
+  'Bondiola Fresca',
+  'Bondiola Congelada',
+  'Nuez',
+  'Cuajo Crudo',
+  'Cuajo Cocinado',
+  'Pajarilla',
+  'Tendones',
+];
+
 export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
   customers,
   currentUser,
@@ -58,966 +81,1396 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
   preselectedCustomer,
   onViewImage,
 }) => {
-  const isRepartidor = currentUser.role === 'REPARTIDOR';
   const isDuenoOrAdmin = currentUser.role === 'DUENO' || currentUser.role === 'ADMINISTRADOR';
-
-  // Products and Stock Data
-  const [products, setProducts] = useState<Product[]>(getStoredProducts());
-  const [stockSummary, setStockSummary] = useState(getStockSummaryForPeriod());
 
   // Customer Selection State
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerWithBalance | null>(
     preselectedCustomer || null
   );
   const [selectedBranch, setSelectedBranch] = useState<CustomerBranch | null>(null);
-  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [showCustomerModal, setShowCustomerModal] = useState<boolean>(!preselectedCustomer);
+  const [customerSearch, setCustomerSearch] = useState<string>('');
 
-  // Active Price List State
-  const [activePriceList, setActivePriceList] = useState<PriceListType>('GENERAL');
+  // Mode: Edition (inputs) vs Full Paper View (paper sheet preview)
+  const [viewMode, setViewMode] = useState<'EDITION' | 'FULL_VIEW'>('EDITION');
 
-  // Boleta Items State
-  const [items, setItems] = useState<
-    {
-      id: string;
-      productId: string;
-      unidadesInput: string;
-      kilajeInput: string;
-      precioOverride: string;
-      observacion: string;
-    }[]
-  >([
-    {
-      id: `item_${Date.now()}_1`,
-      productId: products[0]?.id || '',
-      unidadesInput: '',
-      kilajeInput: '',
-      precioOverride: '',
-      observacion: '',
-    },
-  ]);
+  // Sheet Zoom Scale (80%, 100%, 120%, 140%)
+  const [zoomScale, setZoomScale] = useState<number>(100);
 
-  // Financial Overrides
-  const [descuentoInput, setDescuentoInput] = useState<string>('0');
-  const [recargoInput, setRecargoInput] = useState<string>('0');
+  // Map of productId -> { unidades: string, kilaje: string }
+  const [valuesMap, setValuesMap] = useState<Record<string, { unidades: string; kilaje: string }>>({});
 
-  // Payment Selection State
-  const [pagoTipo, setPagoTipo] = useState<
-    'DEBE' | 'EFECTIVO' | 'TRANSFERENCIA' | 'PARCIAL' | 'MIXTO'
-  >('DEBE');
+  // Financial Summary Drawer
+  const [showFinancialSummaryDrawer, setShowFinancialSummaryDrawer] = useState<boolean>(false);
 
-  const [pagoEfectivoInput, setPagoEfectivoInput] = useState<string>('0');
-  const [pagoTransferenciaInput, setPagoTransferenciaInput] = useState<string>('0');
-  const [pagoOtrosInput, setPagoOtrosInput] = useState<string>('0');
+  // Payment Inputs
+  const [paymentMode, setPaymentMode] = useState<'NO_PAGO' | 'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO'>('NO_PAGO');
+  const [pagoEfectivoStr, setPagoEfectivoStr] = useState<string>('');
+  const [pagoTransfStr, setPagoTransfStr] = useState<string>('');
 
-  // Physical Photo State
-  const [fotoUrl, setFotoUrl] = useState<string>('');
-  const [photoError, setPhotoError] = useState<boolean>(false);
+  // Overpayment authorization
+  const [overpaymentAuthorized, setOverpaymentAuthorized] = useState<boolean>(false);
 
-  // Stock Warning Override Justification
-  const [stockJustification, setStockJustification] = useState<string>('');
+  // Auto-save draft toast indicator
+  const [draftLoadedNotice, setDraftLoadedNotice] = useState<boolean>(false);
 
-  // Generated Boleta Modal
-  const [completedBoleta, setCompletedBoleta] = useState<VirtualBoleta | null>(null);
+  // Submission state
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [createdBoleta, setCreatedBoleta] = useState<VirtualBoleta | null>(null);
 
-  // Draft Notice
-  const [restoredDraftNotice, setRestoredDraftNotice] = useState<boolean>(false);
+  // Input refs for keyboard navigation [productIndex][0: und, 1: kg]
+  const undInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const kgInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Resolve Canonical 24 Products mapped to stored products
+  const canonicalProducts: Product[] = useMemo(() => {
+    const dbProducts = getStoredProducts().filter((p) => p.activo !== false);
 
-  // Auto-load Customer details when selected
+    return CANONICAL_24_NAMES.map((name, index) => {
+      const normName = name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+      const found = dbProducts.find((p) => {
+        const normP = p.nombre
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .trim();
+        return normP === normName || normP.includes(normName) || normName.includes(normP);
+      });
+
+      if (found) {
+        return {
+          ...found,
+          orden: index + 1,
+        };
+      }
+
+      // Fallback product if not present in DB
+      const isKg = !normName.includes('seso');
+      return {
+        id: `canonical_prod_${index}_${normName}`,
+        codigo: `CAN-${index + 1}`,
+        nombre: name,
+        tipoVenta: isKg ? 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO' : 'POR_UNIDAD',
+        tipoControlStock: isKg ? 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO' : 'SOLO_UNIDADES',
+        unidadMedida: isKg ? 'kg' : 'u',
+        cobroPor: isKg ? 'KG' : 'UNIDAD',
+        precios: { GENERAL: 0, MAYORISTA: 0, ESPECIAL: 0, PERSONALIZADA: 0 },
+        stockMinimoUnidades: 0,
+        stockMinimoKg: 0,
+        orden: index + 1,
+        activo: true,
+        usaUnidades: true,
+        usaKilogramos: isKg,
+      };
+    });
+  }, []);
+
+  // Filtered Customers for Modal
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch.trim()) return customers;
+    const q = customerSearch.toLowerCase();
+    return customers.filter(
+      (c) =>
+        c.nombre.toLowerCase().includes(q) ||
+        (c.alias && c.alias.toLowerCase().includes(q)) ||
+        (c.cuitDni && c.cuitDni.includes(q)) ||
+        (c.direccion && c.direccion.toLowerCase().includes(q))
+    );
+  }, [customers, customerSearch]);
+
+  // Load saved draft for selected customer
   useEffect(() => {
-    if (selectedCustomer) {
-      const listType = selectedCustomer.listaPrecioTipo || 'GENERAL';
-      setActivePriceList(listType);
+    if (!selectedCustomer) return;
 
-      // Default payment mode if customary
-      if (selectedCustomer.formaPagoHabitual === 'EFECTIVO') setPagoTipo('EFECTIVO');
-      else if (selectedCustomer.formaPagoHabitual === 'TRANSFERENCIA') setPagoTipo('TRANSFERENCIA');
-      else if (selectedCustomer.formaPagoHabitual === 'MIXTO') setPagoTipo('MIXTO');
-      else setPagoTipo('DEBE');
+    try {
+      const rawDraft = localStorage.getItem(DRAFT_KEY_V4);
+      if (rawDraft) {
+        const draft = JSON.parse(rawDraft);
+        if (draft.customerId === selectedCustomer.id) {
+          if (draft.valuesMap) setValuesMap(draft.valuesMap);
+          if (draft.paymentMode) setPaymentMode(draft.paymentMode);
+          if (draft.pagoEfectivoStr !== undefined) setPagoEfectivoStr(draft.pagoEfectivoStr);
+          if (draft.pagoTransfStr !== undefined) setPagoTransfStr(draft.pagoTransfStr);
+          if (draft.selectedBranchId && selectedCustomer.sucursales) {
+            const branch = selectedCustomer.sucursales.find((b) => b.id === draft.selectedBranchId);
+            if (branch) setSelectedBranch(branch);
+          }
+          setDraftLoadedNotice(true);
+          setTimeout(() => setDraftLoadedNotice(false), 3000);
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading boleta draft:', e);
+    }
+  }, [selectedCustomer?.id]);
 
-      // Select default branch if available
-      if (selectedCustomer.sucursales && selectedCustomer.sucursales.length > 0) {
-        setSelectedBranch(selectedCustomer.sucursales[0]);
-      } else {
-        setSelectedBranch(null);
+  // Auto-save draft on change
+  useEffect(() => {
+    if (!selectedCustomer) return;
+
+    const hasData =
+      Object.values(valuesMap).some((v) => v.unidades !== '' || v.kilaje !== '') ||
+      pagoEfectivoStr !== '' ||
+      pagoTransfStr !== '';
+
+    if (hasData) {
+      const draftObj = {
+        customerId: selectedCustomer.id,
+        selectedBranchId: selectedBranch?.id,
+        valuesMap,
+        paymentMode,
+        pagoEfectivoStr,
+        pagoTransfStr,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(DRAFT_KEY_V4, JSON.stringify(draftObj));
+    }
+  }, [valuesMap, paymentMode, pagoEfectivoStr, pagoTransfStr, selectedCustomer, selectedBranch]);
+
+  // Helper to parse numeric values safely
+  const parseNum = (val: string): number => {
+    if (!val) return 0;
+    const clean = val.replace(/\s/g, '').replace(',', '.');
+    const n = parseFloat(clean);
+    return isNaN(n) ? 0 : n;
+  };
+
+  // Unit price lookup according to customer price list
+  const getProductPrice = (product: Product): number => {
+    if (!selectedCustomer) return product.precios?.GENERAL || 0;
+
+    const priceList: PriceListType = selectedCustomer.listaPrecioTipo || 'GENERAL';
+
+    if (priceList === 'PERSONALIZADA' && selectedCustomer.preciosPersonalizados) {
+      const customPrice = selectedCustomer.preciosPersonalizados[product.id];
+      if (customPrice !== undefined && customPrice > 0) {
+        return customPrice;
       }
     }
+
+    if (product.precios && product.precios[priceList] && product.precios[priceList]! > 0) {
+      return product.precios[priceList]!;
+    }
+
+    return product.precios?.GENERAL || 0;
+  };
+
+  // Helper to determine if product is sold by unit vs weight
+  const isSoldByUnit = (product: Product): boolean => {
+    return (
+      product.cobroPor === 'UNIDAD' ||
+      product.tipoVenta === 'POR_UNIDAD' ||
+      product.unidadMedida === 'u'
+    );
+  };
+
+  // Calculate row values and subtotals for all 24 canonical products
+  const calculatedRows = useMemo(() => {
+    return canonicalProducts.map((product, index) => {
+      const vals = valuesMap[product.id] || { unidades: '', kilaje: '' };
+      const u = parseNum(vals.unidades);
+      const kg = parseNum(vals.kilaje);
+      const price = getProductPrice(product);
+
+      const isUnitProduct = isSoldByUnit(product);
+      const isKgProduct = !isUnitProduct;
+
+      let subtotal = 0;
+      let missingKgWarning = false;
+
+      if (isUnitProduct) {
+        // COBRADO POR UNIDAD
+        subtotal = u * price;
+      } else {
+        // COBRADO POR KILOGRAMO (O CONTROL UNIDADES Y KG COBRO POR KG)
+        // REGLA CRÍTICA: IMPORTE = KILOGRAMOS x PRECIO POR KG
+        // Las unidades son solo informativas y NO calculan el importe.
+        if (kg > 0) {
+          subtotal = kg * price;
+        } else {
+          subtotal = 0; // Se fuerza a $0 si no hay kilaje
+        }
+
+        // Advertencia discreta si ingresó unidades pero no ingresó kg
+        if (u > 0 && kg === 0) {
+          missingKgWarning = true;
+        }
+      }
+
+      const hasValue = isKgProduct ? kg > 0 || u > 0 : u > 0;
+
+      return {
+        index,
+        product,
+        price,
+        unidadesStr: vals.unidades,
+        kilajeStr: vals.kilaje,
+        u,
+        kg,
+        subtotal,
+        isUnitProduct,
+        isKgProduct,
+        missingKgWarning,
+        hasValue,
+      };
+    });
+  }, [canonicalProducts, valuesMap, selectedCustomer]);
+
+  // Financial Totals
+  const totalBoleta = useMemo(() => {
+    return calculatedRows.reduce((sum, r) => sum + r.subtotal, 0);
+  }, [calculatedRows]);
+
+  const saldoAnterior = useMemo(() => {
+    return selectedCustomer ? selectedCustomer.saldoActual : 0;
   }, [selectedCustomer]);
 
-  // Restore Draft on mount if available
-  useEffect(() => {
-    const draft = getSaleDraft();
-    if (draft && !preselectedCustomer) {
-      if (draft.customerId) {
-        const found = customers.find((c) => c.id === draft.customerId);
-        if (found) setSelectedCustomer(found);
-      }
-      if (draft.fotoUrl) setFotoUrl(draft.fotoUrl);
-      setRestoredDraftNotice(true);
-    }
-  }, [customers, preselectedCustomer]);
+  const totalGeneral = useMemo(() => {
+    return totalBoleta + saldoAnterior;
+  }, [totalBoleta, saldoAnterior]);
 
-  // Save Draft automatically
-  useEffect(() => {
-    if (selectedCustomer || items.length > 1 || fotoUrl) {
-      saveSaleDraft({
-        customerId: selectedCustomer?.id,
-        fotoUrl,
-      });
-    }
-  }, [selectedCustomer, items, fotoUrl]);
+  const pagoEfectivo = useMemo(() => parseNum(pagoEfectivoStr), [pagoEfectivoStr]);
+  const pagoTransferencia = useMemo(() => parseNum(pagoTransfStr), [pagoTransfStr]);
+  const totalPagado = useMemo(() => pagoEfectivo + pagoTransferencia, [pagoEfectivo, pagoTransferencia]);
 
-  // Handle Add Item
-  const handleAddItem = () => {
-    const nextProd = products.find((p) => !items.some((it) => it.productId === p.id)) || products[0];
-    setItems((prev) => [
-      ...prev,
-      {
-        id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
-        productId: nextProd?.id || '',
-        unidadesInput: '',
-        kilajeInput: '',
-        precioOverride: '',
-        observacion: '',
-      },
-    ]);
-  };
+  const saldoActualizado = useMemo(() => {
+    return totalGeneral - totalPagado;
+  }, [totalGeneral, totalPagado]);
 
-  // Handle Remove Item
-  const handleRemoveItem = (id: string) => {
-    if (items.length === 1) return;
-    setItems((prev) => prev.filter((it) => it.id !== id));
-  };
+  const isAlDia = Math.abs(saldoActualizado) < 0.01;
+  const isOverpaid = totalPagado > totalGeneral + 0.01;
 
-  // Calculate Subtotal for an Item
-  const calculateItemSubtotal = (
-    productId: string,
-    uInput: string,
-    kgInput: string,
-    precioOverride: string
-  ) => {
-    const prod = products.find((p) => p.id === productId);
-    if (!prod) return { subtotal: 0, precioAplicado: 0, unidades: 0, kilajeReal: 0 };
+  const soldItemsCount = useMemo(() => {
+    return calculatedRows.filter((r) => r.hasValue).length;
+  }, [calculatedRows]);
 
-    const unidades = parseFloat(uInput.replace(',', '.')) || 0;
-    const kilajeReal = parseFloat(kgInput.replace(',', '.')) || 0;
-
-    let precioAplicado = prod.precios[activePriceList] || prod.precios.GENERAL;
-
-    // Custom customer prices
-    if (
-      selectedCustomer?.preciosPersonalizados &&
-      selectedCustomer.preciosPersonalizados[prod.id] !== undefined
-    ) {
-      precioAplicado = selectedCustomer.preciosPersonalizados[prod.id];
-    }
-
-    // Owner/Admin manual override
-    if (isDuenoOrAdmin && precioOverride.trim() !== '') {
-      const parsedOverride = parseFloat(precioOverride.replace(',', '.'));
-      if (!isNaN(parsedOverride) && parsedOverride >= 0) {
-        precioAplicado = parsedOverride;
-      }
-    }
-
-    let subtotal = 0;
-    if (prod.tipoVenta === 'POR_UNIDAD') {
-      subtotal = unidades * precioAplicado;
-    } else {
-      // POR_KILO or UNIDADES_INFORMATIVAS_COBRO_POR_KILO
-      subtotal = kilajeReal * precioAplicado;
-    }
-
-    return { subtotal, precioAplicado, unidades, kilajeReal };
-  };
-
-  // Computed Totals
-  let itemsSubtotalSum = 0;
-  const processedItems: BoletaItem[] = items.map((it) => {
-    const prod = products.find((p) => p.id === it.productId);
-    const { subtotal, precioAplicado, unidades, kilajeReal } = calculateItemSubtotal(
-      it.productId,
-      it.unidadesInput,
-      it.kilajeInput,
-      it.precioOverride
-    );
-
-    itemsSubtotalSum += subtotal;
-
-    return {
-      id: it.id,
-      productId: it.productId,
-      productName: prod ? prod.nombre : 'Producto',
-      tipoVenta: prod ? prod.tipoVenta : 'POR_KILO',
-      unidades,
-      kilajeReal,
-      unidadMedida: prod ? prod.unidadMedida : 'kg',
-      precioAplicado,
-      subtotal,
-      observacion: it.observacion,
-    };
-  });
-
-  const descuento = parseFloat(descuentoInput.replace(',', '.')) || 0;
-  const recargo = parseFloat(recargoInput.replace(',', '.')) || 0;
-
-  const totalBoleta = Math.max(0, itemsSubtotalSum - descuento + recargo);
-
-  // Sync Payment Inputs based on selected Payment Mode
-  useEffect(() => {
-    if (pagoTipo === 'EFECTIVO') {
-      setPagoEfectivoInput(String(totalBoleta));
-      setPagoTransferenciaInput('0');
-      setPagoOtrosInput('0');
-    } else if (pagoTipo === 'TRANSFERENCIA') {
-      setPagoEfectivoInput('0');
-      setPagoTransferenciaInput(String(totalBoleta));
-      setPagoOtrosInput('0');
-    } else if (pagoTipo === 'DEBE') {
-      setPagoEfectivoInput('0');
-      setPagoTransferenciaInput('0');
-      setPagoOtrosInput('0');
-    }
-  }, [pagoTipo, totalBoleta]);
-
-  const efecNum = parseFloat(pagoEfectivoInput.replace(',', '.')) || 0;
-  const transNum = parseFloat(pagoTransferenciaInput.replace(',', '.')) || 0;
-  const otrosNum = parseFloat(pagoOtrosInput.replace(',', '.')) || 0;
-
-  const totalPagado = efecNum + transNum + otrosNum;
-  const saldoRestante = Math.max(0, totalBoleta - totalPagado);
-
-  // Check Stock Exceeded Warning
-  let hasStockExceeded = false;
-  const stockExceededList: { productName: string; requested: string; available: string }[] = [];
-
-  processedItems.forEach((it) => {
-    const summary = stockSummary.find((s) => s.product.id === it.productId);
-    if (summary) {
-      if (summary.product.tipoControlStock === 'SOLO_UNIDADES') {
-        if (it.unidades > summary.unidadesDisponibles) {
-          hasStockExceeded = true;
-          stockExceededList.push({
-            productName: summary.product.nombre,
-            requested: `${it.unidades} u`,
-            available: `${summary.unidadesDisponibles} u`,
-          });
-        }
-      } else {
-        if (it.kilajeReal > summary.kilogramosDisponibles) {
-          hasStockExceeded = true;
-          stockExceededList.push({
-            productName: summary.product.nombre,
-            requested: `${it.kilajeReal} kg`,
-            available: `${summary.kilogramosDisponibles} kg`,
-          });
-        }
-      }
-    }
-  });
-
-  // Photo Handling
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setFotoUrl(event.target.result as string);
-          setPhotoError(false);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  // Generate Sample Photo for Fast Testing
-  const handleGenerateSampleBoletaPhoto = () => {
-    if (!selectedCustomer) return;
-    const custName = selectedCustomer.alias || selectedCustomer.nombre;
-    const num = `B-${String(Date.now()).slice(-5)}`;
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800">
-      <rect width="600" height="800" fill="#fcfbf7" rx="16"/>
-      <rect x="20" y="20" width="560" height="760" fill="none" stroke="#0f172a" stroke-width="3" stroke-dasharray="8,8"/>
-      <text x="300" y="70" font-family="sans-serif" font-size="24" font-weight="900" fill="#0f172a" text-anchor="middle">C&amp;C DISTRIBUIDORA DE CARNES</text>
-      <text x="300" y="100" font-family="sans-serif" font-size="16" font-weight="bold" fill="#059669" text-anchor="middle">BOLETA FÍSICA FOTO-CONFORMADA N° ${num}</text>
-      <line x1="40" y1="120" x2="560" y2="120" stroke="#cbd5e1" stroke-width="2"/>
-      
-      <text x="50" y="160" font-family="sans-serif" font-size="16" font-weight="bold" fill="#0f172a">CLIENTE: ${custName}</text>
-      <text x="50" y="190" font-family="sans-serif" font-size="14" fill="#64748b">DIRECCIÓN: ${selectedCustomer.direccion}</text>
-      <text x="50" y="215" font-family="sans-serif" font-size="14" fill="#64748b">FECHA: ${new Date().toLocaleDateString('es-AR')}</text>
-      
-      <rect x="40" y="240" width="520" height="340" fill="#ffffff" stroke="#e2e8f0" rx="10"/>
-      <text x="60" y="280" font-family="monospace" font-size="15" fill="#1e293b">• VENTA BOLETA VIRTUAL C&amp;C</text>
-      <text x="60" y="320" font-family="monospace" font-size="15" fill="#1e293b">• MONTO TOTAL: $ ${totalBoleta.toLocaleString('es-AR')}</text>
-      <text x="60" y="360" font-family="monospace" font-size="15" fill="#059669">• TOTAL ABONADO: $ ${totalPagado.toLocaleString('es-AR')}</text>
-
-      <circle cx="480" cy="650" r="60" fill="#059669" opacity="0.15"/>
-      <text x="480" y="655" font-family="sans-serif" font-size="16" font-weight="bold" fill="#047857" text-anchor="middle">RECIBIDO OK</text>
-    </svg>`;
-
-    setFotoUrl(`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`);
-    setPhotoError(false);
-  };
-
-  // Finalize Boleta Transaction
-  const handleFinalize = async () => {
+  // Helper validation status for finalization button
+  const finalizeValidation = useMemo(() => {
     if (!selectedCustomer) {
-      alert('Por favor seleccione un cliente.');
-      return;
+      return { canFinalize: false, reason: 'Debe seleccionar un cliente antes de finalizar' };
     }
-
-    if (processedItems.length === 0 || totalBoleta <= 0) {
-      alert('Debe agregar al menos un producto con importe superior a $0.');
-      return;
+    const missingKgItems = calculatedRows.filter((r) => r.isKgProduct && r.u > 0 && r.kg === 0);
+    if (missingKgItems.length > 0) {
+      return {
+        canFinalize: false,
+        reason: `Falta cargar kilogramos en ${missingKgItems[0].product.nombre}`,
+      };
     }
-
-    if (hasStockExceeded && isRepartidor && !stockJustification.trim()) {
-      alert('Esta venta supera el stock registrado. Ingrese una justificación obligatoria para continuar.');
-      return;
+    const soldRows = calculatedRows.filter((r) => (r.isKgProduct ? r.kg > 0 : r.u > 0));
+    if (soldRows.length === 0) {
+      return { canFinalize: false, reason: 'Ingrese al menos 1 producto con kilaje o unidades' };
     }
+    if (totalBoleta <= 0) {
+      return { canFinalize: false, reason: 'El total de la boleta debe ser mayor a $0' };
+    }
+    if (isOverpaid && !overpaymentAuthorized && !isDuenoOrAdmin) {
+      return { canFinalize: false, reason: 'El pago supera el saldo total. Requiere autorización' };
+    }
+    return { canFinalize: true, reason: '' };
+  }, [selectedCustomer, calculatedRows, totalBoleta, isOverpaid, overpaymentAuthorized, isDuenoOrAdmin]);
 
-    const numeroBoleta = `B-${String(Date.now()).slice(-6)}`;
+  // Handle cell input change
+  const handleInputChange = (productId: string, field: 'unidades' | 'kilaje', val: string) => {
+    setValuesMap((prev) => ({
+      ...prev,
+      [productId]: {
+        ...(prev[productId] || { unidades: '', kilaje: '' }),
+        [field]: val,
+      },
+    }));
+  };
 
-    const { virtualBoleta } = finalizeVirtualBoleta({
-      numeroBoleta,
-      customer: selectedCustomer,
-      branchId: selectedBranch?.id,
-      branchName: selectedBranch?.nombre,
-      items: processedItems,
-      subtotal: itemsSubtotalSum,
-      descuento,
-      recargo,
-      total: totalBoleta,
-      pagoEfectivo: efecNum,
-      pagoTransferencia: transNum,
-      pagoOtros: otrosNum,
-      fotoBoletaFisicaUrl: fotoUrl, // optional
-      usuario: currentUser.nombre,
-      listaPrecioAplicada: activePriceList,
-    });
+  // Keyboard navigation on Enter or Down Arrow
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    index: number,
+    field: 'unidades' | 'kilaje'
+  ) => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const product = canonicalProducts[index];
 
-    // Generate 1080px mobile-optimized image automatically
-    try {
-      const generatedImageUrl = await generateBoletaImage(virtualBoleta);
-      virtualBoleta.comprobanteImagenUrl = generatedImageUrl;
-
-      const storedBoletas = getStoredVirtualBoletas();
-      const bIdx = storedBoletas.findIndex((b) => b.id === virtualBoleta.id);
-      if (bIdx !== -1) {
-        storedBoletas[bIdx].comprobanteImagenUrl = generatedImageUrl;
-        saveVirtualBoletas(storedBoletas);
+      if (field === 'unidades' && (product.cobroPor !== 'UNIDAD' && product.unidadMedida !== 'u') && kgInputRefs.current[index]) {
+        kgInputRefs.current[index]?.focus();
+        kgInputRefs.current[index]?.select();
+      } else {
+        const nextIndex = index + 1;
+        if (nextIndex < canonicalProducts.length) {
+          if (undInputRefs.current[nextIndex]) {
+            undInputRefs.current[nextIndex]?.focus();
+            undInputRefs.current[nextIndex]?.select();
+          }
+        }
       }
-    } catch (err) {
-      console.error('Error generando imagen de boleta:', err);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (field === 'kilaje' && undInputRefs.current[index]) {
+        undInputRefs.current[index]?.focus();
+        undInputRefs.current[index]?.select();
+      } else {
+        const prevIndex = index - 1;
+        if (prevIndex >= 0) {
+          const prevProduct = canonicalProducts[prevIndex];
+          if ((prevProduct.cobroPor !== 'UNIDAD' && prevProduct.unidadMedida !== 'u') && kgInputRefs.current[prevIndex]) {
+            kgInputRefs.current[prevIndex]?.focus();
+            kgInputRefs.current[prevIndex]?.select();
+          } else if (undInputRefs.current[prevIndex]) {
+            undInputRefs.current[prevIndex]?.focus();
+            undInputRefs.current[prevIndex]?.select();
+          }
+        }
+      }
+    }
+  };
+
+  // Clear sheet data
+  const handleResetForm = () => {
+    setValuesMap({});
+    setPaymentMode('NO_PAGO');
+    setPagoEfectivoStr('');
+    setPagoTransfStr('');
+    setErrorMessage(null);
+    setOverpaymentAuthorized(false);
+    localStorage.removeItem(DRAFT_KEY_V4);
+  };
+
+  // Customer Selection Handler
+  const handleSelectCustomer = (customer: CustomerWithBalance) => {
+    setSelectedCustomer(customer);
+    setSelectedBranch(null);
+    setShowCustomerModal(false);
+    setCustomerSearch('');
+    handleResetForm();
+  };
+
+  // Payment Mode Change
+  const handlePaymentModeChange = (mode: 'NO_PAGO' | 'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO') => {
+    setPaymentMode(mode);
+    setOverpaymentAuthorized(false);
+    if (mode === 'NO_PAGO') {
+      setPagoEfectivoStr('');
+      setPagoTransfStr('');
+    } else if (mode === 'EFECTIVO') {
+      setPagoEfectivoStr(totalBoleta > 0 ? totalBoleta.toString() : '');
+      setPagoTransfStr('');
+    } else if (mode === 'TRANSFERENCIA') {
+      setPagoEfectivoStr('');
+      setPagoTransfStr(totalBoleta > 0 ? totalBoleta.toString() : '');
+    }
+  };
+
+  // Finalize Venta
+  const handleFinalizeSale = async () => {
+    if (!selectedCustomer) {
+      setErrorMessage('Debe seleccionar un cliente antes de emitir la boleta.');
+      setShowCustomerModal(true);
+      return;
     }
 
-    clearSaleDraft();
-    setCompletedBoleta(virtualBoleta);
-    onSaleCompleted();
+    // PRE-CHECK REGLA 7 & PRUEBA 4:
+    // Si hay productos vendidos por kg que tienen unidades cargadas (u > 0) pero no tienen kilogramos (kg === 0),
+    // se debe impedir la finalización con el mensaje exacto especificado.
+    const missingKgItems = calculatedRows.filter((r) => r.isKgProduct && r.u > 0 && r.kg === 0);
+
+    if (missingKgItems.length > 0) {
+      if (missingKgItems.length === 1) {
+        setErrorMessage(`El producto ${missingKgItems[0].product.nombre} tiene unidades cargadas pero no tiene kilogramos.`);
+      } else {
+        const names = missingKgItems.map((r) => r.product.nombre).join(', ');
+        setErrorMessage(`Los siguientes productos tienen unidades cargadas pero les falta el kilaje: ${names}.`);
+      }
+      return;
+    }
+
+    // Solamente se consideran vendidos los renglones válidos:
+    // Para productos por peso: requiere kg > 0 (las unidades son informativas).
+    // Para productos por unidad: requiere u > 0.
+    const soldRows = calculatedRows.filter((r) => (r.isKgProduct ? r.kg > 0 : r.u > 0));
+
+    if (soldRows.length === 0) {
+      setErrorMessage('La boleta debe incluir al menos 1 producto con kilogramos o unidades cargadas.');
+      return;
+    }
+
+    if (totalBoleta <= 0) {
+      setErrorMessage('El total de la boleta no puede ser $0.');
+      return;
+    }
+
+    if (isOverpaid && !overpaymentAuthorized && !isDuenoOrAdmin) {
+      setErrorMessage(
+        `El pago ingresado (${formatCurrency(totalPagado)}) supera el total adeudado (${formatCurrency(
+          totalGeneral
+        )}). Se requiere autorización administrativa.`
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setShowFinancialSummaryDrawer(false);
+
+    try {
+      const boletaItems: BoletaItem[] = soldRows.map((r, i) => ({
+        id: `item_${r.product.id}_${Date.now()}_${i}`,
+        productId: r.product.id,
+        productName: r.product.nombre,
+        tipoVenta: r.product.tipoVenta,
+        unidades: r.u,
+        kilajeReal: r.kg,
+        unidadMedida: r.product.unidadMedida,
+        precioAplicado: r.price,
+        subtotal: r.subtotal,
+      }));
+
+      const boletaNum = `B-${Date.now().toString().slice(-6)}`;
+      const result = finalizeVirtualBoleta({
+        numeroBoleta: boletaNum,
+        customer: selectedCustomer,
+        branchId: selectedBranch?.id,
+        branchName: selectedBranch?.nombre,
+        listaPrecioAplicada: selectedCustomer.listaPrecioTipo || 'GENERAL',
+        items: boletaItems,
+        subtotal: totalBoleta,
+        descuento: 0,
+        recargo: 0,
+        total: totalBoleta,
+        pagoEfectivo,
+        pagoTransferencia,
+        pagoOtros: 0,
+        usuario: currentUser.nombre || currentUser.username,
+      });
+
+      const boleta = result.virtualBoleta;
+
+      localStorage.removeItem(DRAFT_KEY_V4);
+
+      try {
+        await generateBoletaImage(boleta);
+      } catch (imgErr) {
+        console.warn('Image pre-generation warning:', imgErr);
+      }
+
+      setCreatedBoleta(boleta);
+      onSaleCompleted();
+    } catch (err: any) {
+      console.error('Error finalizando venta:', err);
+      setErrorMessage(err.message || 'Ocurrió un error al registrar la boleta.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2">
-            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
-              <Zap className="w-3.5 h-3.5" /> Módulo Express
-            </span>
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-              Boleta Virtual C&C
-            </h1>
+    <div className="max-w-4xl mx-auto px-1.5 sm:px-4 py-2 pb-44 sm:pb-36 text-slate-900 relative">
+      {/* Draft Loaded Notice */}
+      {draftLoadedNotice && (
+        <div className="mb-2 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between text-emerald-800 text-xs font-semibold shadow-2xs animate-fade-in">
+          <div className="flex items-center gap-2">
+            <RefreshCw className="w-4 h-4 text-emerald-600 animate-spin shrink-0" />
+            <span>Se cargó el borrador previo guardado para este cliente.</span>
           </div>
-          <p className="text-xs sm:text-sm text-slate-300 mt-1">
-            Generación de comprobante digital, cálculo automático por lista de precios y descuento de stock semanal.
-          </p>
+          <button onClick={() => setDraftLoadedNotice(false)} className="p-1 hover:text-emerald-950">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {errorMessage && (
+        <div className="mb-2 p-2.5 bg-red-50 border border-red-300 rounded-xl flex items-center justify-between text-red-800 text-xs font-bold shadow-2xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <button onClick={() => setErrorMessage(null)} className="p-1 hover:text-red-950">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* CUSTOMER HEADER & SELECTION BAR */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+          <div>
+            <h1 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2 uppercase tracking-tight">
+              <FileCheck className="w-4 h-4 text-blue-600" />
+              <span>Boleta Digital de Venta (Hoja Física Completa)</span>
+            </h1>
+            <p className="text-[11px] text-slate-500 font-medium">
+              24 renglones permanentes con precios automáticos por cliente
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowCustomerModal(true)}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-800 hover:bg-blue-100 rounded-xl font-extrabold text-xs transition border border-blue-200 cursor-pointer active:scale-95 shrink-0"
+          >
+            <Search className="w-3.5 h-3.5 text-blue-600" />
+            <span>{selectedCustomer ? 'Cambiar Cliente' : 'Seleccionar Cliente'}</span>
+          </button>
         </div>
 
-        {restoredDraftNotice && (
-          <div className="bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs px-3 py-1.5 rounded-xl flex items-center space-x-2">
-            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>Borrador autoguardado recuperado</span>
-          </div>
-        )}
-      </div>
-
-      {/* 1. SELECCIÓN DE CLIENTE Y SUCURSAL */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
-        <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2 border-b border-slate-100 pb-3">
-          <UserCheck className="w-5 h-5 text-blue-600" />
-          <span>1. Selección de Cliente y Condición de Venta</span>
-        </h2>
-
-        {!selectedCustomer ? (
-          <div className="space-y-3">
-            <div className="relative">
-              <Search className="w-5 h-5 absolute left-3.5 top-3 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Buscar cliente por nombre, fantasía, dirección o zona..."
-                value={customerSearchQuery}
-                onChange={(e) => setCustomerSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 text-sm font-medium"
-              />
+        {selectedCustomer ? (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div>
+              <span className="text-[9px] font-bold uppercase text-slate-400 block">Cliente</span>
+              <span className="font-extrabold text-slate-900 text-xs truncate block">
+                {selectedCustomer.alias || selectedCustomer.nombre}
+              </span>
             </div>
 
-            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-              {customers
-                .filter(
-                  (c) =>
-                    c.nombre.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
-                    (c.alias && c.alias.toLowerCase().includes(customerSearchQuery.toLowerCase())) ||
-                    c.direccion.toLowerCase().includes(customerSearchQuery.toLowerCase())
-                )
-                .map((cust) => (
-                  <div
-                    key={cust.id}
-                    onClick={() => setSelectedCustomer(cust)}
-                    className="p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 transition cursor-pointer flex items-center justify-between"
-                  >
-                    <div>
-                      <p className="font-extrabold text-slate-900 text-sm">
-                        {cust.alias || cust.nombre}
-                      </p>
-                      <p className="text-xs text-slate-500">{cust.direccion} - {cust.zonaRuta}</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-md">
-                        Lista: {cust.listaPrecioTipo || 'GENERAL'}
-                      </span>
-                      <p className="text-xs font-black text-slate-900 mt-1">
-                        Deuda: {formatCurrency(cust.saldoActual)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+            <div>
+              <span className="text-[9px] font-bold uppercase text-slate-400 block">Lista Precios</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-900 rounded font-black text-[10px]">
+                <Layers className="w-3 h-3" />
+                {selectedCustomer.listaPrecioTipo || 'GENERAL'}
+              </span>
             </div>
-          </div>
-        ) : (
-          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-black tracking-wider text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                  Cliente Seleccionado
-                </span>
-                <h3 className="text-lg font-black text-slate-900 mt-1">
-                  {selectedCustomer.alias || selectedCustomer.nombre}
-                </h3>
-                <p className="text-xs text-slate-600 font-medium">
-                  {selectedCustomer.direccion} ({selectedCustomer.localidad}) - {selectedCustomer.zonaRuta}
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedCustomer(null)}
-                className="text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-200 hover:bg-slate-300 px-3 py-1.5 rounded-lg transition cursor-pointer"
+
+            <div>
+              <span className="text-[9px] font-bold uppercase text-slate-400 block">Saldo Anterior</span>
+              <span
+                className={`font-black text-xs block ${
+                  selectedCustomer.saldoActual > 0
+                    ? 'text-red-600'
+                    : selectedCustomer.saldoActual < 0
+                    ? 'text-emerald-600'
+                    : 'text-slate-700'
+                }`}
               >
-                Cambiar Cliente
-              </button>
+                {formatCurrency(selectedCustomer.saldoActual)}
+              </span>
             </div>
 
-            {/* Branch Picker if Multiple Sucursales Exist */}
             {selectedCustomer.sucursales && selectedCustomer.sucursales.length > 0 && (
-              <div className="pt-2 border-t border-slate-200">
-                <label className="text-xs font-extrabold text-slate-700 block mb-1">
-                  Sucursal / Local de Entrega:
-                </label>
+              <div>
+                <span className="text-[9px] font-bold uppercase text-slate-400 block">Sucursal</span>
                 <select
                   value={selectedBranch?.id || ''}
                   onChange={(e) => {
-                    const b = selectedCustomer.sucursales?.find((br) => br.id === e.target.value);
+                    const b = selectedCustomer.sucursales?.find((sb) => sb.id === e.target.value);
                     setSelectedBranch(b || null);
                   }}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                  className="w-full mt-0.5 px-1.5 py-0.5 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-800"
                 >
-                  <option value="">-- Local Principal / Casa Central --</option>
-                  {selectedCustomer.sucursales.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.nombre} - {b.direccion} (Deuda local: {formatCurrency(b.saldoActual)})
+                  <option value="">Casa Central</option>
+                  {selectedCustomer.sucursales.map((br) => (
+                    <option key={br.id} value={br.id}>
+                      {br.nombre}
                     </option>
                   ))}
                 </select>
               </div>
             )}
-
-            {/* Commercial Info Strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-2 border-t border-slate-200/80">
-              <div className="bg-white p-2 rounded-lg border border-slate-200">
-                <span className="text-slate-500 font-bold block">Lista Asignada:</span>
-                <span className="font-black text-slate-900">{activePriceList}</span>
-              </div>
-              <div className="bg-white p-2 rounded-lg border border-slate-200">
-                <span className="text-slate-500 font-bold block">Saldo Actual Cuenta:</span>
-                <span className="font-black text-slate-900">{formatCurrency(selectedCustomer.saldoActual)}</span>
-              </div>
-              <div className="bg-white p-2 rounded-lg border border-slate-200">
-                <span className="text-slate-500 font-bold block">Forma Pago Habitual:</span>
-                <span className="font-black text-slate-900">{selectedCustomer.formaPagoHabitual || 'DEBE'}</span>
-              </div>
-              <div className="bg-white p-2 rounded-lg border border-slate-200">
-                <span className="text-slate-500 font-bold block">Contacto:</span>
-                <span className="font-bold text-slate-900 truncate block">{selectedCustomer.telefono || 'Sin tel'}</span>
-              </div>
+          </div>
+        ) : (
+          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-semibold flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Por favor seleccione un cliente para cargar la boleta.</span>
             </div>
-
-            {/* Owner / Admin List Override */}
-            {isDuenoOrAdmin && (
-              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-center justify-between text-xs">
-                <span className="font-bold text-amber-900">
-                  👑 Permiso Especial: Cambiar Lista de Precios
-                </span>
-                <select
-                  value={activePriceList}
-                  onChange={(e) => setActivePriceList(e.target.value as PriceListType)}
-                  className="bg-white border border-amber-300 font-bold text-amber-900 rounded-lg px-2.5 py-1"
-                >
-                  <option value="GENERAL">Lista General</option>
-                  <option value="MAYORISTA">Lista Mayorista</option>
-                  <option value="ESPECIAL">Lista Especial</option>
-                  <option value="PERSONALIZADA">Lista Personalizada</option>
-                </select>
-              </div>
-            )}
+            <button
+              onClick={() => setShowCustomerModal(true)}
+              className="px-2.5 py-1 bg-amber-600 text-white rounded-lg font-bold text-xs hover:bg-amber-700 transition"
+            >
+              Seleccionar
+            </button>
           </div>
         )}
       </div>
 
-      {/* 2. CARGA DE PRODUCTOS Y KILAJES */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2">
-            <FileText className="w-5 h-5 text-emerald-600" />
-            <span>2. Detalle de Productos y Kilajes Reales</span>
-          </h2>
+      {/* BOLETA TOOLBAR: MODE TOGGLE & ZOOM CONTROLS */}
+      <div className="bg-slate-900 text-white rounded-t-2xl p-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
+        {/* MODE TOGGLE BUTTONS */}
+        <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
+          <button
+            type="button"
+            onClick={() => setViewMode('EDITION')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${
+              viewMode === 'EDITION'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>Modo Edición</span>
+          </button>
 
           <button
-            onClick={handleAddItem}
-            className="flex items-center space-x-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl shadow-2xs transition cursor-pointer"
+            type="button"
+            onClick={() => setViewMode('FULL_VIEW')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${
+              viewMode === 'FULL_VIEW'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white'
+            }`}
           >
-            <Plus className="w-4 h-4" />
-            <span>Agregar Producto</span>
+            <Eye className="w-3.5 h-3.5" />
+            <span>Vista Completa (Papel)</span>
           </button>
         </div>
 
-        {/* Product Items Rows */}
-        <div className="space-y-3">
-          {items.map((item, index) => {
-            const prod = products.find((p) => p.id === item.productId);
-            const stockItem = stockSummary.find((s) => s.product.id === item.productId);
+        {/* ZOOM CONTROLS & RESET */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-800 px-2 py-1 rounded-xl border border-slate-700 text-xs font-bold">
+            <span className="text-slate-400 text-[10px] uppercase mr-1">Zoom:</span>
+            <button
+              type="button"
+              onClick={() => setZoomScale((z) => Math.max(75, z - 15))}
+              className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white"
+              title="Alejar"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <span className="w-8 text-center font-black text-emerald-400 text-xs">{zoomScale}%</span>
+            <button
+              type="button"
+              onClick={() => setZoomScale((z) => Math.min(150, z + 15))}
+              className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white"
+              title="Acercar"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+          </div>
 
-            const { subtotal, precioAplicado } = calculateItemSubtotal(
-              item.productId,
-              item.unidadesInput,
-              item.kilajeInput,
-              item.precioOverride
-            );
-
-            return (
-              <div
-                key={item.id}
-                className="bg-slate-50 p-3 sm:p-4 rounded-xl border border-slate-200 space-y-3 relative group"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                  {/* Selector Producto */}
-                  <div className="md:col-span-4">
-                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
-                      Producto #{index + 1}
-                    </label>
-                    <select
-                      value={item.productId}
-                      onChange={(e) => {
-                        const newId = e.target.value;
-                        setItems((prev) =>
-                          prev.map((it) => (it.id === item.id ? { ...it, productId: newId } : it))
-                        );
-                      }}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
-                    >
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nombre} ({p.tipoVenta === 'POR_UNIDAD' ? 'Por Unidad' : 'Por Kg'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Campo Unidades */}
-                  <div className="md:col-span-2">
-                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
-                      Unidades
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0"
-                      value={item.unidadesInput}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setItems((prev) =>
-                          prev.map((it) => (it.id === item.id ? { ...it, unidadesInput: val } : it))
-                        );
-                      }}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-extrabold text-slate-900"
-                    />
-                  </div>
-
-                  {/* Campo Kilaje Real */}
-                  <div className="md:col-span-2">
-                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
-                      Kilaje Real (kg)
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={item.kilajeInput}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setItems((prev) =>
-                          prev.map((it) => (it.id === item.id ? { ...it, kilajeInput: val } : it))
-                        );
-                      }}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-extrabold text-emerald-800"
-                    />
-                  </div>
-
-                  {/* Precio Aplicado */}
-                  <div className="md:col-span-2">
-                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
-                      Precio Lista ($)
-                    </label>
-                    {isDuenoOrAdmin ? (
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder={String(precioAplicado)}
-                        value={item.precioOverride}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setItems((prev) =>
-                            prev.map((it) => (it.id === item.id ? { ...it, precioOverride: val } : it))
-                          );
-                        }}
-                        className="w-full bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 text-xs font-black text-amber-900"
-                      />
-                    ) : (
-                      <div className="bg-slate-200 border border-slate-300 rounded-xl px-3 py-2 text-xs font-black text-slate-700">
-                        {formatCurrency(precioAplicado)}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Subtotal & Delete */}
-                  <div className="md:col-span-2 flex items-center justify-between space-x-2">
-                    <div className="text-right min-w-0">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Subtotal</span>
-                      <span className="text-sm font-black text-slate-900 truncate block">
-                        {formatCurrency(subtotal)}
-                      </span>
-                    </div>
-
-                    {items.length > 1 && (
-                      <button
-                        onClick={() => handleRemoveItem(item.id)}
-                        className="text-slate-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition cursor-pointer shrink-0"
-                        title="Eliminar producto"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Stock Indicator Strip */}
-                {stockItem && (
-                  <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200/80">
-                    <span className="text-slate-500 font-medium">
-                      Stock Semanal Disponible:{' '}
-                      <strong className="text-slate-800">
-                        {stockItem.unidadesDisponibles} u / {stockItem.kilogramosDisponibles.toLocaleString('es-AR')} kg
-                      </strong>
-                    </span>
-                    <span
-                      className={`font-black px-2 py-0.5 rounded-md text-[10px] uppercase ${
-                        stockItem.estadoSemaforo === 'VERDE'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : stockItem.estadoSemaforo === 'AMARILLO'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {stockItem.estadoSemaforo}
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {soldItemsCount > 0 && (
+            <button
+              type="button"
+              onClick={handleResetForm}
+              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-xl transition"
+              title="Limpiar campos"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          )}
         </div>
+      </div>
 
-        {/* Warning if Sale exceeds Stock */}
-        {hasStockExceeded && (
-          <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 space-y-2">
-            <div className="flex items-center space-x-2 text-red-800 font-extrabold text-xs">
-              <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
-              <span>ADVERTENCIA: Esta venta supera el stock semanal disponible en depósito</span>
-            </div>
-            <ul className="text-xs text-red-700 list-disc list-inside space-y-1 font-medium">
-              {stockExceededList.map((st, i) => (
-                <li key={i}>
-                  <strong>{st.productName}</strong> - Solicitado: {st.requested} | Disponible: {st.available}
-                </li>
-              ))}
-            </ul>
-            {isRepartidor && (
-              <div className="pt-2">
-                <label className="text-xs font-bold text-red-900 block mb-1">
-                  Justificación obligatoria del Repartidor para continuar:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej: Se retiró mercadería fresca directo de frigorífico..."
-                  value={stockJustification}
-                  onChange={(e) => setStockJustification(e.target.value)}
-                  className="w-full bg-white border border-red-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800"
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 3. RESUMEN Y TOTAL DE LA BOLETA */}
-        <div className="bg-slate-900 text-white rounded-xl p-4 sm:p-5 space-y-3">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3">
+      {/* PHYSICAL DIGITAL SHEET CONTAINER */}
+      <div className="bg-slate-200 p-1 sm:p-2.5 rounded-b-2xl border border-slate-300 overflow-x-auto shadow-inner">
+        <div
+          className="bg-white rounded-xl shadow-md border border-slate-300 transition-all duration-200 mx-auto max-w-2xl"
+          style={{
+            transform: zoomScale !== 100 ? `scale(${zoomScale / 100})` : 'none',
+            transformOrigin: 'top center',
+          }}
+        >
+          {/* SHEET HEADER */}
+          <div className="p-2 sm:p-3 bg-slate-900 text-white rounded-t-xl border-b border-slate-800 flex items-center justify-between text-xs">
             <div>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Subtotal Productos</p>
-              <p className="text-lg font-black text-white">{formatCurrency(itemsSubtotalSum)}</p>
+              <span className="font-black text-sm text-white tracking-wide block uppercase">
+                MENUDENCIAS C&C
+              </span>
+              <span className="text-[10px] text-emerald-400 font-bold block">
+                Boleta de Venta - Hoja Física
+              </span>
             </div>
-
-            <div className="flex items-center space-x-3 text-xs">
-              <div>
-                <label className="text-slate-400 font-bold block mb-0.5">Descuento ($)</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={descuentoInput}
-                  onChange={(e) => setDescuentoInput(e.target.value)}
-                  className="w-24 bg-slate-800 border border-slate-700 text-emerald-400 font-bold rounded-lg px-2.5 py-1 text-xs"
-                />
-              </div>
-              <div>
-                <label className="text-slate-400 font-bold block mb-0.5">Recargo ($)</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={recargoInput}
-                  onChange={(e) => setRecargoInput(e.target.value)}
-                  className="w-24 bg-slate-800 border border-slate-700 text-amber-400 font-bold rounded-lg px-2.5 py-1 text-xs"
-                />
-              </div>
+            <div className="text-right">
+              <span className="text-[10px] text-slate-400 block">
+                Fecha: {new Date().toLocaleDateString('es-AR')}
+              </span>
+              <span className="font-bold text-amber-400 text-xs">
+                Items cargados: {soldItemsCount}/24
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-base sm:text-lg font-black uppercase text-white tracking-wider">
-              TOTAL FINAL BOLETA:
-            </span>
-            <span className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight">
+          {/* ULTRA HIGH DENSITY 24 PRODUCT TABLE */}
+          <table className="w-full text-left border-collapse table-fixed">
+            <thead className="bg-slate-100 border-b border-slate-300 text-[10px] font-black text-slate-700 uppercase tracking-wider">
+              <tr>
+                <th className="py-1 px-1 text-center w-[12%]">UND.</th>
+                <th className="py-1 px-1 sm:px-2 w-[38%]">PRODUCTO</th>
+                <th className="py-1 px-1 text-center w-[16%]">KGS.</th>
+                <th className="py-1 px-1 sm:px-2 text-right w-[17%]">PRECIO</th>
+                <th className="py-1 px-1 sm:px-2 text-right w-[17%]">IMPORTE</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 text-xs">
+              {calculatedRows.map((r) => {
+                const isKgProduct = r.isKgProduct;
+
+                return (
+                  <tr
+                    key={r.product.id}
+                    className={`h-8 sm:h-9 transition-colors ${
+                      r.hasValue
+                        ? r.missingKgWarning
+                          ? 'bg-amber-50/90 font-bold border-l-4 border-l-amber-500'
+                          : 'bg-blue-50/90 font-bold border-l-4 border-l-blue-600'
+                        : r.index % 2 === 0
+                        ? 'bg-white'
+                        : 'bg-slate-50/60'
+                    }`}
+                  >
+                    {/* UND. CELL */}
+                    <td className="py-0.5 px-0.5 text-center">
+                      {viewMode === 'EDITION' ? (
+                        <input
+                          ref={(el) => {
+                            undInputRefs.current[r.index] = el;
+                          }}
+                          type="text"
+                          inputMode="decimal"
+                          value={r.unidadesStr}
+                          onChange={(e) =>
+                            handleInputChange(r.product.id, 'unidades', e.target.value)
+                          }
+                          onKeyDown={(e) => handleKeyDown(e, r.index, 'unidades')}
+                          placeholder="0"
+                          className={`w-full text-center font-black text-xs py-0.5 px-0 border rounded focus:ring-2 focus:ring-blue-500 focus:outline-none transition ${
+                            r.u > 0
+                              ? r.missingKgWarning
+                                ? 'border-amber-500 bg-amber-50 text-amber-900 font-extrabold shadow-2xs'
+                                : 'border-blue-600 bg-white text-blue-900 font-extrabold shadow-2xs'
+                              : 'border-slate-300 bg-slate-50 text-slate-800'
+                          }`}
+                        />
+                      ) : (
+                        <span className="font-bold text-slate-900">{r.unidadesStr || '-'}</span>
+                      )}
+                    </td>
+
+                    {/* PRODUCT NAME CELL */}
+                    <td className="py-0.5 px-1 sm:px-2 truncate font-bold text-slate-900 text-[11px] sm:text-xs">
+                      <span className="text-slate-400 text-[9px] mr-1 select-none font-extrabold">
+                        {r.index + 1}.
+                      </span>
+                      <span>{r.product.nombre}</span>
+                    </td>
+
+                    {/* KGS. CELL */}
+                    <td className="py-0.5 px-0.5 text-center">
+                      {viewMode === 'EDITION' ? (
+                        <input
+                          ref={(el) => {
+                            kgInputRefs.current[r.index] = el;
+                          }}
+                          type="text"
+                          inputMode="decimal"
+                          value={r.kilajeStr}
+                          onChange={(e) =>
+                            handleInputChange(r.product.id, 'kilaje', e.target.value)
+                          }
+                          onKeyDown={(e) => handleKeyDown(e, r.index, 'kilaje')}
+                          placeholder={isKgProduct ? '0,0' : '-'}
+                          disabled={!isKgProduct}
+                          className={`w-full text-center font-black text-xs py-0.5 px-0 border rounded focus:ring-2 focus:ring-blue-500 focus:outline-none transition ${
+                            !isKgProduct
+                              ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed'
+                              : r.missingKgWarning
+                              ? 'border-amber-500 bg-amber-50 text-amber-900 font-extrabold shadow-2xs animate-pulse ring-1 ring-amber-400'
+                              : r.kg > 0
+                              ? 'border-emerald-600 bg-white text-emerald-900 font-extrabold shadow-2xs'
+                              : 'border-slate-300 bg-slate-50 text-slate-800'
+                          }`}
+                        />
+                      ) : (
+                        <span className="font-bold text-slate-900">
+                          {isKgProduct ? r.kilajeStr || '-' : 'N/A'}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* PRECIO AUTOMÁTICO CELL */}
+                    <td className="py-0.5 px-1 sm:px-2 text-right font-extrabold text-[11px] sm:text-xs">
+                      {r.price > 0 ? (
+                        <span className="text-slate-800">{formatCurrency(r.price)}</span>
+                      ) : (
+                        <span className="text-red-600 font-bold text-[10px]">Sin precio</span>
+                      )}
+                    </td>
+
+                    {/* IMPORTE CALCULADO CELL */}
+                    <td className="py-0.5 px-1 sm:px-2 text-right font-black text-[11px] sm:text-xs">
+                      {r.missingKgWarning ? (
+                        <span
+                          className="inline-flex items-center justify-end gap-0.5 text-amber-700 font-bold text-[10px]"
+                          title="Falta ingresar el kilaje"
+                        >
+                          <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                          <span>$0 (Falta kg)</span>
+                        </span>
+                      ) : r.subtotal > 0 ? (
+                        <span className="text-blue-700 font-black">
+                          {formatCurrency(r.subtotal)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">$0</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {/* FOOTER TOTAL ON SHEET */}
+          <div className="p-2.5 bg-slate-100 rounded-b-xl border-t border-slate-300 flex items-center justify-between text-xs font-black">
+            <span className="text-slate-600 uppercase">SUBTOTAL HOJA BOLETA:</span>
+            <span className="text-blue-700 text-sm sm:text-base font-black">
               {formatCurrency(totalBoleta)}
             </span>
           </div>
         </div>
       </div>
 
-      {/* 4. FORMA DE PAGO Y DEUDAS */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
-        <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2 border-b border-slate-100 pb-3">
+      {/* SECCIÓN EN PÁGINA: RESUMEN FINANCIERO, FORMAS DE PAGO Y FINALIZACIÓN */}
+      <div className="mt-4 bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-md space-y-4">
+        <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
           <DollarSign className="w-5 h-5 text-emerald-600" />
-          <span>3. Selección de Forma de Pago</span>
-        </h2>
-
-        {/* Selector Modos de Pago */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {[
-            { id: 'DEBE', label: 'No Pagó (A Cta)', color: 'border-red-300 bg-red-50 text-red-800' },
-            { id: 'EFECTIVO', label: 'Efectivo Completo', color: 'border-emerald-300 bg-emerald-50 text-emerald-800' },
-            { id: 'TRANSFERENCIA', label: 'Transferencia Compl.', color: 'border-blue-300 bg-blue-50 text-blue-800' },
-            { id: 'PARCIAL', label: 'Pago Parcial', color: 'border-amber-300 bg-amber-50 text-amber-800' },
-            { id: 'MIXTO', label: 'Pago Mixto', color: 'border-purple-300 bg-purple-50 text-purple-800' },
-          ].map((mode) => (
-            <button
-              key={mode.id}
-              onClick={() => setPagoTipo(mode.id as any)}
-              className={`p-3 rounded-xl border text-xs font-extrabold text-center transition cursor-pointer ${
-                pagoTipo === mode.id
-                  ? `${mode.color} ring-2 ring-slate-900 shadow-sm`
-                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {mode.label}
-            </button>
-          ))}
+          <h3 className="font-black text-slate-900 text-base sm:text-lg uppercase">
+            Resumen Financiero y Forma de Pago
+          </h3>
         </div>
 
-        {/* Inputs para Pago Parcial o Mixto */}
-        {(pagoTipo === 'MIXTO' || pagoTipo === 'PARCIAL') && (
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div>
-              <label className="font-extrabold text-slate-700 block mb-1">Importe Efectivo ($)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={pagoEfectivoInput}
-                onChange={(e) => setPagoEfectivoInput(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900"
-              />
-            </div>
-            <div>
-              <label className="font-extrabold text-slate-700 block mb-1">Importe Transferencia ($)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={pagoTransferenciaInput}
-                onChange={(e) => setPagoTransferenciaInput(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900"
-              />
-            </div>
-            <div>
-              <label className="font-extrabold text-slate-700 block mb-1">Otro Medio ($)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={pagoOtrosInput}
-                onChange={(e) => setPagoOtrosInput(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Total Pagado vs Saldo Pendiente Summary */}
-        <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
-          <div>
-            <span className="text-slate-500 font-bold block">Total Abonado Hoy:</span>
-            <span className="font-black text-emerald-700 text-base">{formatCurrency(totalPagado)}</span>
-          </div>
-          <div>
-            <span className="text-slate-500 font-bold block">Saldo Pendiente esta Boleta:</span>
-            <span className="font-black text-red-600 text-base">{formatCurrency(saldoRestante)}</span>
-          </div>
-          <div>
-            <span className="text-slate-500 font-bold block">Nuevo Saldo Cuenta Corriente:</span>
-            <span className="font-black text-slate-900 text-base">
-              {formatCurrency((selectedCustomer?.saldoActual || 0) + saldoRestante)}
+        {/* FINANCIAL SUMMARY CARDS */}
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+          {/* 1. TOTAL BOLETA */}
+          <div className="flex items-center justify-between font-black text-slate-900 text-sm sm:text-base">
+            <span>1. TOTAL DE LA BOLETA:</span>
+            <span className="text-blue-700 text-lg sm:text-xl font-black">
+              {formatCurrency(totalBoleta)}
             </span>
           </div>
-        </div>
-      </div>
 
-      {/* 4. ADJUNTAR DOCUMENTO U OBSERVACIÓN (OPCIONAL) */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
-        <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center justify-between border-b border-slate-100 pb-3">
-          <div className="flex items-center space-x-2">
-            <Camera className="w-5 h-5 text-blue-600" />
-            <span>4. Adjuntar Documento u Observación (Opcional - Excepcional)</span>
+          {/* 2. SALDO ANTERIOR */}
+          <div className="flex items-center justify-between font-bold text-slate-600 text-xs sm:text-sm">
+            <span>2. SALDO ANTERIOR:</span>
+            <span
+              className={
+                saldoAnterior > 0
+                  ? 'text-red-600 font-extrabold'
+                  : saldoAnterior < 0
+                  ? 'text-emerald-600 font-extrabold'
+                  : 'text-slate-700'
+              }
+            >
+              {formatCurrency(saldoAnterior)}
+            </span>
           </div>
-          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full uppercase">
-            No Obligatorio
-          </span>
-        </h2>
 
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          {!fotoUrl ? (
-            <div className="w-full sm:w-auto flex flex-wrap gap-2">
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handlePhotoCapture}
-                className="hidden"
-              />
+          <div className="border-t border-slate-200 my-1" />
+
+          {/* 3. TOTAL GENERAL */}
+          <div className="flex items-center justify-between font-black text-slate-900 text-base sm:text-lg bg-slate-200/80 p-2.5 rounded-xl">
+            <span>3. TOTAL GENERAL:</span>
+            <span className="text-slate-900">{formatCurrency(totalGeneral)}</span>
+          </div>
+
+          {/* PAYMENT MODE SELECTION */}
+          <div className="pt-2">
+            <label className="block text-xs font-extrabold uppercase text-slate-600 mb-2">
+              Forma de Pago Hoy:
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
-                onClick={() => cameraInputRef.current?.click()}
-                className="flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3.5 py-2 rounded-xl border border-slate-300 transition cursor-pointer"
+                type="button"
+                onClick={() => handlePaymentModeChange('NO_PAGO')}
+                className={`py-2 px-2.5 rounded-xl font-extrabold text-xs transition-all border cursor-pointer ${
+                  paymentMode === 'NO_PAGO'
+                    ? 'bg-red-600 text-white border-red-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
               >
-                <Camera className="w-4 h-4 text-slate-600" />
-                <span>Tomar Foto Adjunta</span>
+                No pagó
               </button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoCapture}
-                className="hidden"
-              />
               <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3.5 py-2 rounded-xl border border-slate-300 transition cursor-pointer"
+                type="button"
+                onClick={() => handlePaymentModeChange('EFECTIVO')}
+                className={`py-2 px-2.5 rounded-xl font-extrabold text-xs transition-all border cursor-pointer ${
+                  paymentMode === 'EFECTIVO'
+                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
               >
-                <span>Subir de Galería</span>
+                Efectivo
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePaymentModeChange('TRANSFERENCIA')}
+                className={`py-2 px-2.5 rounded-xl font-extrabold text-xs transition-all border cursor-pointer ${
+                  paymentMode === 'TRANSFERENCIA'
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                Transferencia
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePaymentModeChange('MIXTO')}
+                className={`py-2 px-2.5 rounded-xl font-extrabold text-xs transition-all border cursor-pointer ${
+                  paymentMode === 'MIXTO'
+                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                Efectivo + Transf.
               </button>
             </div>
-          ) : (
-            <div className="flex items-center justify-between w-full bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-300 shrink-0 bg-slate-200">
-                  <img src={fotoUrl} alt="Adjunto" className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <p className="text-xs font-extrabold text-emerald-700 flex items-center gap-1">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Documento Adjunto
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-medium">Se incluirá como referencia en la boleta</p>
-                </div>
-              </div>
+          </div>
 
-              <button
-                onClick={() => setFotoUrl('')}
-                className="text-xs font-bold text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-200 transition cursor-pointer"
-              >
-                Quitar Adjunto
-              </button>
+          {/* PAYMENT INPUT FIELDS */}
+          {(paymentMode === 'EFECTIVO' || paymentMode === 'MIXTO') && (
+            <div className="pt-2 animate-fade-in">
+              <label className="block text-xs font-bold text-emerald-800 mb-1">
+                4. PAGÓ EN EFECTIVO ($):
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={pagoEfectivoStr}
+                onChange={(e) => setPagoEfectivoStr(e.target.value)}
+                placeholder="0"
+                className="w-full text-lg font-black p-2.5 border-2 border-emerald-400 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              />
             </div>
+          )}
+
+          {(paymentMode === 'TRANSFERENCIA' || paymentMode === 'MIXTO') && (
+            <div className="pt-2 animate-fade-in">
+              <label className="block text-xs font-bold text-blue-800 mb-1">
+                5. PAGÓ EN TRANSFERENCIA ($):
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={pagoTransfStr}
+                onChange={(e) => setPagoTransfStr(e.target.value)}
+                placeholder="0"
+                className="w-full text-lg font-black p-2.5 border-2 border-blue-400 bg-white rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+          )}
+
+          {/* TOTAL PAGADO */}
+          <div className="flex items-center justify-between font-extrabold text-slate-800 text-xs sm:text-sm pt-1">
+            <span>TOTAL PAGADO:</span>
+            <span className="text-emerald-700 font-black text-sm sm:text-base">
+              {formatCurrency(totalPagado)}
+            </span>
+          </div>
+
+          {/* SALDO ACTUALIZADO */}
+          <div className="border-t border-slate-200 pt-3">
+            <div className="flex items-center justify-between font-black text-slate-900 text-sm sm:text-base">
+              <span>6. SALDO ACTUALIZADO:</span>
+              <span
+                className={
+                  isAlDia
+                    ? 'text-emerald-600'
+                    : saldoActualizado > 0
+                    ? 'text-red-600'
+                    : 'text-emerald-600'
+                }
+              >
+                {formatCurrency(saldoActualizado)}
+              </span>
+            </div>
+
+            <div className="mt-2 text-center">
+              <span
+                className={`inline-block px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                  isAlDia
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : saldoActualizado > 0
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                {isAlDia ? 'AL DÍA' : saldoActualizado > 0 ? 'DEBE SALDO' : 'A FAVOR DEL CLIENTE'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* IN-PAGE FINALIZE BUTTON WITH STATUS REASON */}
+        <div className="pt-2 space-y-2">
+          <button
+            type="button"
+            onClick={handleFinalizeSale}
+            disabled={isSubmitting || !finalizeValidation.canFinalize}
+            className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl transition-all cursor-pointer ${
+              isSubmitting || !finalizeValidation.canFinalize
+                ? 'bg-slate-200 text-slate-500 border border-slate-300 cursor-not-allowed'
+                : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black active:scale-98'
+            }`}
+          >
+            {isSubmitting ? (
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5" />
+            )}
+            <span>FINALIZAR VENTA Y EMITIR BOLETA VIRTUAL</span>
+          </button>
+
+          {!finalizeValidation.canFinalize && finalizeValidation.reason && (
+            <p className="text-center text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2 flex items-center justify-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>{finalizeValidation.reason}</span>
+            </p>
           )}
         </div>
       </div>
 
-      {/* FINALIZAR BOTÓN */}
-      <div className="pt-2">
-        <button
-          onClick={handleFinalize}
-          disabled={!selectedCustomer || totalBoleta <= 0}
-          className="w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 disabled:opacity-50 text-white font-black text-base py-4 rounded-2xl shadow-xl transition cursor-pointer flex items-center justify-center space-x-3"
-        >
-          <CheckCircle2 className="w-6 h-6" />
-          <span>FINALIZAR VENTA Y EMITIR BOLETA VIRTUAL</span>
-        </button>
+      {/* STICKY BOTTOM BAR (POSICIONADA POR ENCIMA DE LA NAVEGACIÓN MÓVIL bottom-14 md:bottom-0) */}
+      <div className="fixed bottom-14 md:bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 p-2.5 sm:p-3 z-40 shadow-2xl flex items-center justify-between gap-2">
+        <div>
+          <span className="text-[9px] uppercase font-bold text-slate-400 block">
+            TOTAL BOLETA
+          </span>
+          <span className="text-base sm:text-xl font-black text-emerald-400">
+            {formatCurrency(totalBoleta)}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {/* VER RESUMEN BUTTON */}
+          <button
+            type="button"
+            onClick={() => setShowFinancialSummaryDrawer(true)}
+            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1 transition border border-slate-700 cursor-pointer active:scale-95"
+          >
+            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <span>Ver Resumen</span>
+          </button>
+
+          {/* EMITIR VENTA BUTTON */}
+          <button
+            type="button"
+            onClick={handleFinalizeSale}
+            disabled={isSubmitting || !finalizeValidation.canFinalize}
+            className={`px-4 sm:px-5 py-2 rounded-xl font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-lg transition-all cursor-pointer active:scale-95 ${
+              isSubmitting || !finalizeValidation.canFinalize
+                ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black'
+            }`}
+            title={finalizeValidation.reason || 'Finalizar Venta'}
+          >
+            {isSubmitting ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4" />
+            )}
+            <span>Finalizar</span>
+          </button>
+        </div>
       </div>
 
-      {/* RENDER VIRTUAL BOLETA MODAL AFTER COMPLETION */}
-      {completedBoleta && (
+      {/* CUSTOMER SELECTION MODAL */}
+      {showCustomerModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-up">
+            <div className="p-3.5 bg-slate-900 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-sm sm:text-base flex items-center gap-1.5">
+                  <Search className="w-4 h-4 text-blue-400" />
+                  Seleccionar Cliente
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Busque un cliente para cargar su lista de precios
+                </p>
+              </div>
+
+              {selectedCustomer && (
+                <button
+                  onClick={() => setShowCustomerModal(false)}
+                  className="p-1 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+
+            {/* SEARCH INPUT */}
+            <div className="p-3 border-b border-slate-200 bg-slate-50">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={customerSearch}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  placeholder="Buscar por nombre, alias o CUIT..."
+                  className="w-full pl-9 pr-8 py-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  autoFocus
+                />
+                {customerSearch && (
+                  <button
+                    onClick={() => setCustomerSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* CUSTOMERS LIST */}
+            <div className="flex-1 overflow-y-auto p-2 divide-y divide-slate-100">
+              {filteredCustomers.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs font-semibold">
+                  No se encontraron clientes coincidentes.
+                </div>
+              ) : (
+                filteredCustomers.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => handleSelectCustomer(c)}
+                    className="w-full text-left p-2.5 hover:bg-blue-50 rounded-xl transition flex items-center justify-between group cursor-pointer"
+                  >
+                    <div>
+                      <span className="font-extrabold text-slate-900 text-xs sm:text-sm block">
+                        {c.alias || c.nombre}
+                      </span>
+                      {c.alias && c.nombre !== c.alias && (
+                        <span className="text-[10px] text-slate-400 block">{c.nombre}</span>
+                      )}
+                      <span className="text-[10px] text-slate-500 font-medium">
+                        Lista: <strong>{c.listaPrecioTipo || 'GENERAL'}</strong>
+                      </span>
+                    </div>
+
+                    <div className="text-right">
+                      <span
+                        className={`font-black text-xs sm:text-sm block ${
+                          c.saldoActual > 0
+                            ? 'text-red-600'
+                            : c.saldoActual < 0
+                            ? 'text-emerald-600'
+                            : 'text-slate-600'
+                        }`}
+                      >
+                        {formatCurrency(c.saldoActual)}
+                      </span>
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block">
+                        Saldo
+                      </span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FINANCIAL SUMMARY DRAWER */}
+      {showFinancialSummaryDrawer && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex flex-col justify-end">
+          <div className="bg-white rounded-t-3xl max-w-2xl w-full mx-auto p-4 sm:p-6 shadow-2xl border-t border-slate-200 overflow-y-auto max-h-[88vh] animate-slide-up space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-black text-slate-900 text-base uppercase">
+                  Resumen Financiero y Cobro
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowFinancialSummaryDrawer(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-800 rounded-full hover:bg-slate-100 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* FINANCIAL SUMMARY BOX */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+              {/* 1. TOTAL BOLETA */}
+              <div className="flex items-center justify-between font-black text-slate-900 text-base sm:text-lg">
+                <span>1. TOTAL DE LA BOLETA:</span>
+                <span className="text-blue-700 text-xl">{formatCurrency(totalBoleta)}</span>
+              </div>
+
+              {/* 2. SALDO ANTERIOR */}
+              <div className="flex items-center justify-between font-bold text-slate-600 text-sm sm:text-base">
+                <span>2. SALDO ANTERIOR:</span>
+                <span
+                  className={
+                    saldoAnterior > 0
+                      ? 'text-red-600'
+                      : saldoAnterior < 0
+                      ? 'text-emerald-600'
+                      : ''
+                  }
+                >
+                  {formatCurrency(saldoAnterior)}
+                </span>
+              </div>
+
+              <div className="border-t border-slate-200 my-1" />
+
+              {/* 3. TOTAL GENERAL */}
+              <div className="flex items-center justify-between font-black text-slate-900 text-lg sm:text-xl bg-slate-200/70 p-2.5 rounded-xl">
+                <span>3. TOTAL GENERAL:</span>
+                <span className="text-slate-900">{formatCurrency(totalGeneral)}</span>
+              </div>
+
+              {/* PAYMENT MODE TOGGLE */}
+              <div className="pt-2">
+                <label className="block text-xs font-extrabold uppercase text-slate-500 mb-2">
+                  Forma de Pago Hoy:
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePaymentModeChange('NO_PAGO')}
+                    className={`py-2 px-2.5 rounded-xl font-extrabold text-xs transition-all border cursor-pointer ${
+                      paymentMode === 'NO_PAGO'
+                        ? 'bg-red-600 text-white border-red-700 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    No pagó
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePaymentModeChange('EFECTIVO')}
+                    className={`py-2 px-2.5 rounded-xl font-extrabold text-xs transition-all border cursor-pointer ${
+                      paymentMode === 'EFECTIVO'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    Efectivo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePaymentModeChange('TRANSFERENCIA')}
+                    className={`py-2 px-2.5 rounded-xl font-extrabold text-xs transition-all border cursor-pointer ${
+                      paymentMode === 'TRANSFERENCIA'
+                        ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    Transferencia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePaymentModeChange('MIXTO')}
+                    className={`py-2 px-2.5 rounded-xl font-extrabold text-xs transition-all border cursor-pointer ${
+                      paymentMode === 'MIXTO'
+                        ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    Efectivo + Transf.
+                  </button>
+                </div>
+              </div>
+
+              {/* PAYMENT INPUT FIELDS */}
+              {(paymentMode === 'EFECTIVO' || paymentMode === 'MIXTO') && (
+                <div className="pt-2 animate-fade-in">
+                  <label className="block text-xs font-bold text-emerald-800 mb-1">
+                    4. PAGÓ EN EFECTIVO ($):
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={pagoEfectivoStr}
+                    onChange={(e) => setPagoEfectivoStr(e.target.value)}
+                    placeholder="0"
+                    className="w-full text-lg font-black p-2.5 border-2 border-emerald-400 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              {(paymentMode === 'TRANSFERENCIA' || paymentMode === 'MIXTO') && (
+                <div className="pt-2 animate-fade-in">
+                  <label className="block text-xs font-bold text-blue-800 mb-1">
+                    5. PAGÓ EN TRANSFERENCIA ($):
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={pagoTransfStr}
+                    onChange={(e) => setPagoTransfStr(e.target.value)}
+                    placeholder="0"
+                    className="w-full text-lg font-black p-2.5 border-2 border-blue-400 bg-white rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              {/* SALDO ACTUALIZADO SUMMARY */}
+              <div className="border-t border-slate-200 pt-3">
+                <div className="flex items-center justify-between font-black text-slate-900 text-base sm:text-lg">
+                  <span>6. SALDO ACTUALIZADO:</span>
+                  <span
+                    className={
+                      isAlDia
+                        ? 'text-emerald-600'
+                        : saldoActualizado > 0
+                        ? 'text-red-600'
+                        : 'text-emerald-600'
+                    }
+                  >
+                    {formatCurrency(saldoActualizado)}
+                  </span>
+                </div>
+
+                <div className="mt-2 text-center">
+                  <span
+                    className={`inline-block px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                      isAlDia
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : saldoActualizado > 0
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
+                    {isAlDia ? 'AL DÍA' : saldoActualizado > 0 ? 'DEBE SALDO' : 'A FAVOR DEL CLIENTE'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 space-y-2">
+              <button
+                type="button"
+                onClick={handleFinalizeSale}
+                disabled={isSubmitting || !finalizeValidation.canFinalize}
+                className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl transition-all cursor-pointer ${
+                  isSubmitting || !finalizeValidation.canFinalize
+                    ? 'bg-slate-200 text-slate-500 border border-slate-300 cursor-not-allowed'
+                    : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black'
+                }`}
+              >
+                {isSubmitting ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-5 h-5" />
+                )}
+                <span>Finalizar y Emitir Boleta</span>
+              </button>
+
+              {!finalizeValidation.canFinalize && finalizeValidation.reason && (
+                <p className="text-center text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2 flex items-center justify-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>{finalizeValidation.reason}</span>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* COMPLETED BOLETA MODAL */}
+      {createdBoleta && (
         <VirtualBoletaModal
-          boleta={completedBoleta}
-          customerPhone={selectedCustomer?.telefono}
-          onClose={() => {
-            setCompletedBoleta(null);
-            setSelectedCustomer(null);
-            setSelectedBranch(null);
-            setItems([]);
-            setPagoEfectivoInput('0');
-            setPagoTransferenciaInput('0');
-            setPagoOtrosInput('0');
-            setFotoUrl('');
-            setStockJustification('');
-          }}
-          onViewImage={onViewImage}
+          boleta={createdBoleta}
           currentUser={currentUser}
+          onClose={() => setCreatedBoleta(null)}
+          onViewImage={onViewImage}
         />
       )}
     </div>

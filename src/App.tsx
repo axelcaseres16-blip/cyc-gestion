@@ -169,10 +169,12 @@ export default function App() {
         allElements.forEach((el) => {
           const rect = el.getBoundingClientRect();
           if (rect.right > vw + 2) {
-            console.warn('[Overflow Detected]', el, {
+            console.warn('[Overflow Detected]', {
+              elementTag: el.tagName,
+              elementId: el.id,
+              className: el.className,
               right: rect.right,
               viewportWidth: vw,
-              className: el.className,
             });
           }
         });

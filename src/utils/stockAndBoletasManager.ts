@@ -12,6 +12,7 @@ import {
   Movement,
 } from '../types';
 import { getStoredCustomers, saveCustomers, getStoredMovements, saveMovements } from './storage';
+import { formatCurrency } from './formatters';
 import { recordAuditLog } from './auditLogger';
 import {
   generateOperationId,
@@ -28,126 +29,391 @@ const MATADERO_INGRESOS_KEY = 'cyc_gestion_matadero_ingresos_v1';
 const STOCK_MOVEMENTS_KEY = 'cyc_gestion_stock_movements_v1';
 const VIRTUAL_BOLETAS_KEY = 'cyc_gestion_virtual_boletas_v1';
 
-// Products catalogue default
+// Products catalogue default - Exact 24 Canonical Products
 export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'prod_higado',
     codigo: 'HIG-01',
-    nombre: 'Hígado Vacuno',
+    nombre: 'Higado',
     tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
     tipoControlStock: 'UNIDADES_Y_KILOS',
     unidadMedida: 'kg',
-    precios: {
-      GENERAL: 5200,
-      MAYORISTA: 4850,
-      ESPECIAL: 4600,
-      PERSONALIZADA: 5005,
-    },
+    precios: { GENERAL: 5200, MAYORISTA: 4850, ESPECIAL: 4600, PERSONALIZADA: 5005 },
     stockMinimoUnidades: 10,
     stockMinimoKg: 50,
     activo: true,
-  },
-  {
-    id: 'prod_chinchulin',
-    codigo: 'CHI-02',
-    nombre: 'Chinchulines Vacunos',
-    tipoVenta: 'POR_KILO',
-    tipoControlStock: 'SOLO_KILOS',
-    unidadMedida: 'kg',
-    precios: {
-      GENERAL: 6800,
-      MAYORISTA: 6300,
-      ESPECIAL: 6000,
-      PERSONALIZADA: 6500,
-    },
-    stockMinimoUnidades: 0,
-    stockMinimoKg: 40,
-    activo: true,
-  },
-  {
-    id: 'prod_centro',
-    codigo: 'MOL-03',
-    nombre: 'Centro (Molleja de Corazón)',
-    tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
-    tipoControlStock: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
-    unidadMedida: 'kg',
-    precios: {
-      GENERAL: 12500,
-      MAYORISTA: 11800,
-      ESPECIAL: 11200,
-      PERSONALIZADA: 12000,
-    },
-    stockMinimoUnidades: 5,
-    stockMinimoKg: 20,
-    activo: true,
+    orden: 1,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
   },
   {
     id: 'prod_corazon',
-    codigo: 'COR-04',
-    nombre: 'Corazón Vacuno',
-    tipoVenta: 'POR_KILO',
+    codigo: 'COR-02',
+    nombre: 'Corazon',
+    tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
     tipoControlStock: 'UNIDADES_Y_KILOS',
     unidadMedida: 'kg',
-    precios: {
-      GENERAL: 4500,
-      MAYORISTA: 4100,
-      ESPECIAL: 3900,
-      PERSONALIZADA: 4300,
-    },
+    precios: { GENERAL: 4500, MAYORISTA: 4100, ESPECIAL: 3900, PERSONALIZADA: 4300 },
     stockMinimoUnidades: 8,
     stockMinimoKg: 30,
     activo: true,
-  },
-  {
-    id: 'prod_mondongo',
-    codigo: 'MON-05',
-    nombre: 'Mondongo Blanqueado',
-    tipoVenta: 'POR_KILO',
-    tipoControlStock: 'SOLO_KILOS',
-    unidadMedida: 'kg',
-    precios: {
-      GENERAL: 5900,
-      MAYORISTA: 5400,
-      ESPECIAL: 5100,
-      PERSONALIZADA: 5600,
-    },
-    stockMinimoUnidades: 0,
-    stockMinimoKg: 35,
-    activo: true,
+    orden: 2,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
   },
   {
     id: 'prod_lengua',
-    codigo: 'LEN-06',
-    nombre: 'Lengua Vacuna',
-    tipoVenta: 'POR_KILO',
+    codigo: 'LEN-03',
+    nombre: 'Lengua',
+    tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
     tipoControlStock: 'UNIDADES_Y_KILOS',
     unidadMedida: 'kg',
-    precios: {
-      GENERAL: 9800,
-      MAYORISTA: 9200,
-      ESPECIAL: 8800,
-      PERSONALIZADA: 9400,
-    },
+    precios: { GENERAL: 9800, MAYORISTA: 9200, ESPECIAL: 8800, PERSONALIZADA: 9400 },
     stockMinimoUnidades: 5,
     stockMinimoKg: 15,
     activo: true,
+    orden: 3,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
   },
   {
-    id: 'prod_caja_pollo',
-    codigo: 'POL-07',
-    nombre: 'Caja Pata Muslo (15kg)',
+    id: 'prod_quijada',
+    codigo: 'QUI-04',
+    nombre: 'Quijada',
+    tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
+    tipoControlStock: 'UNIDADES_Y_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 4000, MAYORISTA: 3700, ESPECIAL: 3500, PERSONALIZADA: 3800 },
+    stockMinimoUnidades: 5,
+    stockMinimoKg: 20,
+    activo: true,
+    orden: 4,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_rabo',
+    codigo: 'RAB-05',
+    nombre: 'Rabo',
+    tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
+    tipoControlStock: 'UNIDADES_Y_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 7800, MAYORISTA: 7300, ESPECIAL: 7000, PERSONALIZADA: 7500 },
+    stockMinimoUnidades: 5,
+    stockMinimoKg: 20,
+    activo: true,
+    orden: 5,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_rinon',
+    codigo: 'RIN-06',
+    nombre: 'Riñon',
+    tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
+    tipoControlStock: 'UNIDADES_Y_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 4200, MAYORISTA: 3800, ESPECIAL: 3600, PERSONALIZADA: 3900 },
+    stockMinimoUnidades: 10,
+    stockMinimoKg: 30,
+    activo: true,
+    orden: 6,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_bofe',
+    codigo: 'BOF-07',
+    nombre: 'Bofe',
+    tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
+    tipoControlStock: 'UNIDADES_Y_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 2400, MAYORISTA: 2100, ESPECIAL: 1900, PERSONALIZADA: 2200 },
+    stockMinimoUnidades: 5,
+    stockMinimoKg: 20,
+    activo: true,
+    orden: 7,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_centro',
+    codigo: 'CEN-08',
+    nombre: 'Centro',
+    tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
+    tipoControlStock: 'UNIDADES_Y_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 12500, MAYORISTA: 11800, ESPECIAL: 11200, PERSONALIZADA: 7000 },
+    stockMinimoUnidades: 5,
+    stockMinimoKg: 20,
+    activo: true,
+    orden: 8,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_chinchulin',
+    codigo: 'CHI-09',
+    nombre: 'Chinchulin',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 6800, MAYORISTA: 6300, ESPECIAL: 6000, PERSONALIZADA: 6000 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 40,
+    activo: true,
+    orden: 9,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_mondongo',
+    codigo: 'MON-10',
+    nombre: 'Mondongo',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 5900, MAYORISTA: 5400, ESPECIAL: 5100, PERSONALIZADA: 5600 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 35,
+    activo: true,
+    orden: 10,
+    usaUnidades: false,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_tripa',
+    codigo: 'TRI-11',
+    nombre: 'Tripa',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 4800, MAYORISTA: 4300, ESPECIAL: 4000, PERSONALIZADA: 4500 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 25,
+    activo: true,
+    orden: 11,
+    usaUnidades: false,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_rueda',
+    codigo: 'RUE-12',
+    nombre: 'Rueda',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 3500, MAYORISTA: 3100, ESPECIAL: 2900, PERSONALIZADA: 3200 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 20,
+    activo: true,
+    orden: 12,
+    usaUnidades: false,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_seso',
+    codigo: 'SES-13',
+    nombre: 'Seso',
     tipoVenta: 'POR_UNIDAD',
     tipoControlStock: 'SOLO_UNIDADES',
     unidadMedida: 'u',
-    precios: {
-      GENERAL: 38000,
-      MAYORISTA: 35500,
-      ESPECIAL: 34000,
-      PERSONALIZADA: 36500,
-    },
+    precios: { GENERAL: 2800, MAYORISTA: 2400, ESPECIAL: 2200, PERSONALIZADA: 2500 },
     stockMinimoUnidades: 10,
     stockMinimoKg: 0,
     activo: true,
+    orden: 13,
+    usaUnidades: true,
+    usaKilogramos: false,
+    cobroPor: 'UNIDAD',
+  },
+  {
+    id: 'prod_molleja',
+    codigo: 'MOL-14',
+    nombre: 'Molleja',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 12000, MAYORISTA: 11200, ESPECIAL: 10800, PERSONALIZADA: 11500 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 15,
+    activo: true,
+    orden: 14,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_ganote',
+    codigo: 'GAN-15',
+    nombre: 'Gañote',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 3000, MAYORISTA: 2600, ESPECIAL: 2400, PERSONALIZADA: 2800 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 15,
+    activo: true,
+    orden: 15,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_pechito',
+    codigo: 'PEC-16',
+    nombre: 'Pechito',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 6500, MAYORISTA: 5900, ESPECIAL: 5600, PERSONALIZADA: 6200 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 20,
+    activo: true,
+    orden: 16,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_carre',
+    codigo: 'CAR-17',
+    nombre: 'Carre',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 6800, MAYORISTA: 6200, ESPECIAL: 5900, PERSONALIZADA: 6500 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 20,
+    activo: true,
+    orden: 17,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_bondiola_fresca',
+    codigo: 'BDF-18',
+    nombre: 'Bondiola Fresca',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 8200, MAYORISTA: 7600, ESPECIAL: 7300, PERSONALIZADA: 7800 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 20,
+    activo: true,
+    orden: 18,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_bondiola_congelada',
+    codigo: 'BDC-19',
+    nombre: 'Bondiola Congelada',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 7600, MAYORISTA: 7000, ESPECIAL: 6700, PERSONALIZADA: 7200 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 20,
+    activo: true,
+    orden: 19,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_nuez',
+    codigo: 'NUE-20',
+    nombre: 'Nuez',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 9000, MAYORISTA: 8300, ESPECIAL: 8000, PERSONALIZADA: 8500 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 15,
+    activo: true,
+    orden: 20,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_cuajo_crudo',
+    codigo: 'CUC-21',
+    nombre: 'Cuajo Crudo',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 3200, MAYORISTA: 2800, ESPECIAL: 2600, PERSONALIZADA: 2900 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 15,
+    activo: true,
+    orden: 21,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_cuajo_cocinado',
+    codigo: 'CUO-22',
+    nombre: 'Cuajo Cocinado',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 3700, MAYORISTA: 3300, ESPECIAL: 3000, PERSONALIZADA: 3400 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 15,
+    activo: true,
+    orden: 22,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_pajarilla',
+    codigo: 'PAJ-23',
+    nombre: 'Pajarilla',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 2300, MAYORISTA: 2000, ESPECIAL: 1800, PERSONALIZADA: 2100 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 15,
+    activo: true,
+    orden: 23,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
+  },
+  {
+    id: 'prod_tendones',
+    codigo: 'TEN-24',
+    nombre: 'Tendones',
+    tipoVenta: 'POR_KILO',
+    tipoControlStock: 'SOLO_KILOS',
+    unidadMedida: 'kg',
+    precios: { GENERAL: 3800, MAYORISTA: 3400, ESPECIAL: 3100, PERSONALIZADA: 3600 },
+    stockMinimoUnidades: 0,
+    stockMinimoKg: 15,
+    activo: true,
+    orden: 24,
+    usaUnidades: true,
+    usaKilogramos: true,
+    cobroPor: 'KG',
   },
 ];
 
@@ -159,7 +425,22 @@ export function getStoredProducts(): Product[] {
       localStorage.setItem(PRODUCTS_KEY, JSON.stringify(DEFAULT_PRODUCTS));
       return DEFAULT_PRODUCTS;
     }
-    return JSON.parse(raw);
+    const list: Product[] = JSON.parse(raw);
+    // Ensure all 24 canonical products exist or reset if missing canonical ones
+    const canonicalIds = new Set(DEFAULT_PRODUCTS.map(p => p.id));
+    const hasAllCanonical = DEFAULT_PRODUCTS.every(dp => list.some(p => p.id === dp.id));
+    
+    if (!hasAllCanonical) {
+      // Re-initialize with canonical list, preserving customized prices if found
+      const merged = DEFAULT_PRODUCTS.map(dp => {
+        const found = list.find(p => p.id === dp.id);
+        return found ? { ...dp, precios: { ...dp.precios, ...found.precios }, activo: found.activo } : dp;
+      });
+      localStorage.setItem(PRODUCTS_KEY, JSON.stringify(merged));
+      return merged;
+    }
+
+    return list.sort((a, b) => (a.orden ?? 99) - (b.orden ?? 99));
   } catch (err) {
     console.error('Error cargando productos:', err);
     return DEFAULT_PRODUCTS;
@@ -507,7 +788,7 @@ export function finalizeVirtualBoleta(params: {
   pagoEfectivo: number;
   pagoTransferencia: number;
   pagoOtros: number;
-  fotoBoletaFisicaUrl: string;
+  fotoBoletaFisicaUrl?: string;
   usuario: string;
   listaPrecioAplicada: PriceListType | 'PERSONALIZADA';
 }): { virtualBoleta: VirtualBoleta; movementBoleta: Movement } {
@@ -907,28 +1188,17 @@ export function generateCustomerVirtualBoletaWpMessage(
   customerName: string,
   boleta: VirtualBoleta
 ): string {
-  const totalFormatted = boleta.total.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
-  const pagadoFormatted = boleta.totalPagado.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
-  const saldoPendienteFormatted = boleta.saldoRestanteBoleta.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
-  const saldoTotalFormatted = boleta.nuevoSaldoCuenta.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
-
-  const itemsList = boleta.items
-    .map((it) => {
-      const uText = it.unidades > 0 ? `${it.unidades}u` : '';
-      const kgText = it.kilajeReal > 0 ? `${it.kilajeReal}kg` : '';
-      const detail = [uText, kgText].filter(Boolean).join(' / ');
-      return `• ${it.productName} (${detail}): ${it.subtotal.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' })}`;
-    })
-    .join('\n');
+  const totalFormatted = formatCurrency(boleta.total);
+  const saldoActualizadoFormatted = formatCurrency(boleta.nuevoSaldoCuenta);
+  const estadoTexto = boleta.nuevoSaldoCuenta <= 0.01 ? 'AL DÍA' : `DEBE ${saldoActualizadoFormatted}`;
 
   return (
-    `Hola *${customerName}*! Te enviamos el detalle de la compra realizada hoy (Boleta #${boleta.numeroBoleta}):\n\n` +
-    `*Detalle de Productos:*\n${itemsList}\n\n` +
-    `💰 *Total de esta compra:* ${totalFormatted}\n` +
-    `💵 *Abonado hoy:* ${pagadoFormatted}\n` +
-    `📌 *Saldo pendiente de esta boleta:* ${saldoPendienteFormatted}\n` +
-    `📊 *Saldo TOTAL de tu cuenta corriente:* ${saldoTotalFormatted}\n\n` +
-    `Muchas gracias por elegir *C&C Distribuidora*! 🚚`
+    `Hola *${customerName}*, te enviamos la boleta de la compra realizada hoy (Boleta #${boleta.numeroBoleta}).\n\n` +
+    `Total de la boleta: *${totalFormatted}*\n` +
+    `Saldo actualizado: *${saldoActualizadoFormatted}*\n` +
+    `Estado: *${estadoTexto}*\n\n` +
+    `Ante cualquier consulta, respondé a este mensaje.\n` +
+    `Muchas gracias.`
   );
 }
 

@@ -3,24 +3,28 @@ import { formatCurrency } from './formatters';
 
 /**
  * Generates a high-resolution (1080px wide) PNG image data URL of a Virtual Boleta
- * optimized for mobile devices and WhatsApp sharing.
+ * styled as a traditional digital sheet and optimized for mobile/WhatsApp sharing.
  */
 export async function generateBoletaImage(boleta: VirtualBoleta): Promise<string> {
   return new Promise((resolve) => {
-    // 1080px wide canvas for mobile optimization
     const width = 1080;
     
-    // Calculate required height dynamically based on item count
-    const headerHeight = 360;
-    const metaHeight = 220;
-    const itemHeight = 65;
-    const tableHeaderHeight = 60;
+    // Dynamic height calculation
+    const headerHeight = 220;
+    const metaHeight = 180;
+    const itemHeight = 60;
+    const tableHeaderHeight = 55;
     const itemsCount = Math.max(1, boleta.items.length);
     const tableTotalHeight = tableHeaderHeight + itemsCount * itemHeight;
-    const totalsHeight = 320;
-    const footerHeight = 140;
+
+    // Financial totals box height
+    let totalsBoxHeight = 360;
+    if (boleta.pagoEfectivo > 0) totalsBoxHeight += 35;
+    if (boleta.pagoTransferencia > 0) totalsBoxHeight += 35;
+
+    const footerHeight = 120;
     
-    const totalCanvasHeight = headerHeight + metaHeight + tableTotalHeight + totalsHeight + footerHeight;
+    const totalCanvasHeight = headerHeight + metaHeight + tableTotalHeight + totalsBoxHeight + footerHeight;
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -37,76 +41,54 @@ export async function generateBoletaImage(boleta: VirtualBoleta): Promise<string
     ctx.fillRect(0, 0, width, totalCanvasHeight);
 
     // Outer border
-    ctx.strokeStyle = '#CBD5E1';
+    ctx.strokeStyle = '#0F172A';
     ctx.lineWidth = 4;
-    ctx.strokeRect(10, 10, width - 20, totalCanvasHeight - 20);
+    ctx.strokeRect(12, 12, width - 24, totalCanvasHeight - 24);
 
     // 2. Header Banner
     ctx.fillStyle = '#0F172A'; // Slate 900
-    ctx.fillRect(20, 20, width - 40, 180);
+    ctx.fillRect(20, 20, width - 40, 170);
 
     // Brand Name
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'black 46px system-ui, -apple-system, sans-serif';
+    ctx.font = 'black 48px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('MENUDENCIAS C&C', width / 2, 85);
+    ctx.fillText('MENUDENCIAS C&C', width / 2, 82);
 
     // Subtitle
     ctx.fillStyle = '#10B981'; // Emerald 500
     ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-    ctx.fillText('DISTRIBUIDORA DE CARNES Y SUBPRODUCTOS', width / 2, 125);
+    ctx.fillText('DISTRIBUIDORA DE CARNES Y SUBPRODUCTOS', width / 2, 120);
 
     // Document Title
     ctx.fillStyle = '#94A3B8'; // Slate 400
     ctx.font = '600 18px system-ui, -apple-system, sans-serif';
-    ctx.fillText('COMPROBANTE DIGITAL DE VENTA', width / 2, 155);
+    ctx.fillText('BOLETA VIRTUAL DE VENTA', width / 2, 150);
 
-    // 3. Payment Status Banner (PAGADO / PAGO PARCIAL / DEBE)
-    let statusText = 'PAGADO';
-    let statusBg = '#059669'; // Emerald 600
-    if (boleta.saldoRestanteBoleta > 0 && boleta.totalPagado > 0) {
-      statusText = 'PAGO PARCIAL';
-      statusBg = '#D97706'; // Amber 600
-    } else if (boleta.saldoRestanteBoleta > 0 && boleta.totalPagado === 0) {
-      statusText = 'DEBE (A CUENTA CORRIENTE)';
-      statusBg = '#DC2626'; // Red 600
-    }
-
-    // Draw status rectangle
-    ctx.fillStyle = statusBg;
-    ctx.beginPath();
-    ctx.roundRect(40, 220, width - 80, 80, 16);
-    ctx.fill();
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'black 34px system-ui, -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`ESTADO: ${statusText}`, width / 2, 272);
-
-    // 4. Metadata Box
-    const metaY = 320;
+    // 3. Metadata Box
+    const metaY = 205;
     ctx.fillStyle = '#F8FAFC'; // Slate 50
-    ctx.strokeStyle = '#E2E8F0';
+    ctx.strokeStyle = '#CBD5E1';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(40, metaY, width - 80, 180, 12);
+    ctx.roundRect(40, metaY, width - 80, 160, 12);
     ctx.fill();
     ctx.stroke();
 
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#64748B'; // Slate 500
+    ctx.fillStyle = '#475569';
     ctx.font = 'bold 18px system-ui, -apple-system, sans-serif';
 
     // Left Metadata
-    ctx.fillText('CLIENTE:', 70, metaY + 45);
+    ctx.fillText('CLIENTE:', 65, metaY + 42);
     ctx.fillStyle = '#0F172A';
     ctx.font = 'black 24px system-ui, -apple-system, sans-serif';
-    ctx.fillText(boleta.customerName, 170, metaY + 45);
+    ctx.fillText(boleta.customerName, 160, metaY + 42);
 
     if (boleta.branchName) {
       ctx.fillStyle = '#047857';
       ctx.font = 'bold 18px system-ui, -apple-system, sans-serif';
-      ctx.fillText(`SUCURSAL: ${boleta.branchName}`, 70, metaY + 80);
+      ctx.fillText(`SUCURSAL: ${boleta.branchName}`, 65, metaY + 76);
     }
 
     ctx.fillStyle = '#475569';
@@ -120,24 +102,24 @@ export async function generateBoletaImage(boleta: VirtualBoleta): Promise<string
       hour: '2-digit',
       minute: '2-digit',
     });
-    ctx.fillText(`FECHA Y HORA: ${fechaFormatted} - ${horaFormatted} hs`, 70, metaY + 120);
-    ctx.fillText(`REGISTRADO POR: ${boleta.registradoPor}`, 70, metaY + 152);
+    ctx.fillText(`FECHA Y HORA: ${fechaFormatted} - ${horaFormatted} hs`, 65, metaY + 112);
+    ctx.fillText(`REGISTRADO POR: ${boleta.registradoPor}`, 65, metaY + 142);
 
     // Right Metadata
     ctx.textAlign = 'right';
     ctx.fillStyle = '#0F172A';
     ctx.font = 'black 26px system-ui, -apple-system, sans-serif';
-    ctx.fillText(`BOLETA N° ${boleta.numeroBoleta}`, width - 70, metaY + 45);
+    ctx.fillText(`BOLETA N° ${boleta.numeroBoleta}`, width - 65, metaY + 42);
 
     ctx.fillStyle = '#475569';
     ctx.font = '600 18px system-ui, -apple-system, sans-serif';
-    ctx.fillText(`LISTA: ${boleta.listaPrecioAplicada}`, width - 70, metaY + 85);
+    ctx.fillText(`LISTA: ${boleta.listaPrecioAplicada}`, width - 65, metaY + 80);
 
-    // 5. Product Detail Table
-    const tableY = metaY + 210;
+    // 4. Product Detail Table
+    const tableY = metaY + 180;
 
     // Table Header
-    ctx.fillStyle = '#1E293B'; // Slate 800
+    ctx.fillStyle = '#1E293B';
     ctx.beginPath();
     ctx.roundRect(40, tableY, width - 80, tableHeaderHeight, [8, 8, 0, 0]);
     ctx.fill();
@@ -145,23 +127,22 @@ export async function generateBoletaImage(boleta: VirtualBoleta): Promise<string
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 18px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('PRODUCTO / DETALLE', 60, tableY + 38);
+    ctx.fillText('UND.', 60, tableY + 35);
+    ctx.fillText('PRODUCTO', 140, tableY + 35);
 
     ctx.textAlign = 'center';
-    ctx.fillText('CANT / KILAJE', 530, tableY + 38);
-    ctx.fillText('PRECIO UN.', 750, tableY + 38);
+    ctx.fillText('KGS.', 580, tableY + 35);
+    ctx.fillText('PRECIO', 760, tableY + 35);
 
     ctx.textAlign = 'right';
-    ctx.fillText('SUBTOTAL', width - 60, tableY + 38);
+    ctx.fillText('IMPORTE', width - 60, tableY + 35);
 
     // Table Rows
     let currentY = tableY + tableHeaderHeight;
     boleta.items.forEach((item, index) => {
-      // Row Background
       ctx.fillStyle = index % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
       ctx.fillRect(40, currentY, width - 80, itemHeight);
 
-      // Divider line
       ctx.strokeStyle = '#E2E8F0';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -169,149 +150,189 @@ export async function generateBoletaImage(boleta: VirtualBoleta): Promise<string
       ctx.lineTo(width - 40, currentY + itemHeight);
       ctx.stroke();
 
-      // Product Name
+      // UND.
       ctx.textAlign = 'left';
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
+      ctx.fillText(item.unidades > 0 ? `${item.unidades}` : '-', 65, currentY + 36);
+
+      // PRODUCTO
       ctx.fillStyle = '#0F172A';
       ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
-      ctx.fillText(item.productName, 60, currentY + 38);
+      ctx.fillText(item.productName, 140, currentY + 36);
 
-      // Cant / Kilaje
+      // KGS.
       ctx.textAlign = 'center';
       ctx.fillStyle = '#334155';
       ctx.font = '600 19px system-ui, -apple-system, sans-serif';
+      const kgsStr = item.kilajeReal > 0 ? item.kilajeReal.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 3 }) : '-';
+      ctx.fillText(kgsStr, 580, currentY + 36);
 
-      let qtyStr = '';
-      if (item.unidades > 0 && item.kilajeReal > 0) {
-        qtyStr = `${item.unidades} u / ${item.kilajeReal.toLocaleString('es-AR')} kg`;
-      } else if (item.kilajeReal > 0) {
-        qtyStr = `${item.kilajeReal.toLocaleString('es-AR')} kg`;
-      } else {
-        qtyStr = `${item.unidades} u`;
-      }
-      ctx.fillText(qtyStr, 530, currentY + 38);
+      // PRECIO
+      ctx.fillText(`$ ${item.precioAplicado.toLocaleString('es-AR')}`, 760, currentY + 36);
 
-      // Precio Un
-      ctx.fillText(`$ ${item.precioAplicado.toLocaleString('es-AR')}`, 750, currentY + 38);
-
-      // Subtotal
+      // IMPORTE
       ctx.textAlign = 'right';
       ctx.fillStyle = '#0F172A';
       ctx.font = 'black 21px system-ui, -apple-system, sans-serif';
-      ctx.fillText(`$ ${item.subtotal.toLocaleString('es-AR')}`, width - 60, currentY + 38);
+      ctx.fillText(`$ ${item.subtotal.toLocaleString('es-AR')}`, width - 60, currentY + 36);
 
       currentY += itemHeight;
     });
 
-    // 6. Totals Box
-    const totalsY = currentY + 30;
+    // 5. Financial Breakdown (Exact Order required in specs)
+    const totalsY = currentY + 20;
 
-    ctx.fillStyle = '#F1F5F9'; // Slate 100
-    ctx.strokeStyle = '#CBD5E1';
+    const totalBoleta = boleta.total;
+    const saldoAnterior = boleta.saldoAnteriorCuenta || 0;
+    const totalGeneral = totalBoleta + saldoAnterior;
+    const pagoEfectivo = boleta.pagoEfectivo || 0;
+    const pagoTransferencia = boleta.pagoTransferencia || 0;
+    const totalPagado = boleta.totalPagado || (pagoEfectivo + pagoTransferencia);
+    const saldoActualizado = boleta.nuevoSaldoCuenta;
+    const isAlDia = Math.abs(saldoActualizado) < 0.01;
+
+    ctx.fillStyle = '#F8FAFC';
+    ctx.strokeStyle = '#0F172A';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(40, totalsY, width - 80, 270, 16);
+    ctx.roundRect(40, totalsY, width - 80, totalsBoxHeight, 12);
     ctx.fill();
     ctx.stroke();
 
-    // Line 1: Subtotal and Total
+    let ty = totalsY + 40;
+
+    // 1. TOTAL DE LA BOLETA
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#0F172A';
+    ctx.font = 'black 24px system-ui, -apple-system, sans-serif';
+    ctx.fillText('TOTAL DE LA BOLETA', 65, ty);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#2563EB'; // Blue
+    ctx.font = 'black 28px system-ui, -apple-system, sans-serif';
+    ctx.fillText(`$ ${totalBoleta.toLocaleString('es-AR')}`, width - 65, ty);
+
+    ty += 38;
+
+    // 2. SALDO ANTERIOR
     ctx.textAlign = 'left';
     ctx.fillStyle = '#475569';
     ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
-    ctx.fillText('SUBTOTAL PRODUCTOS:', 70, totalsY + 45);
+    ctx.fillText('SALDO ANTERIOR', 65, ty);
 
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#0F172A';
+    ctx.fillStyle = '#475569';
     ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-    ctx.fillText(`$ ${boleta.subtotal.toLocaleString('es-AR')}`, width - 70, totalsY + 45);
+    ctx.fillText(`$ ${saldoAnterior.toLocaleString('es-AR')}`, width - 65, ty);
 
-    let offset = 0;
-    if (boleta.descuento > 0) {
-      offset += 30;
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#059669';
-      ctx.font = '600 18px system-ui, -apple-system, sans-serif';
-      ctx.fillText('DESCUENTO APLICADO:', 70, totalsY + 45 + offset);
-
-      ctx.textAlign = 'right';
-      ctx.fillText(`-$ ${boleta.descuento.toLocaleString('es-AR')}`, width - 70, totalsY + 45 + offset);
-    }
-
-    if (boleta.recargo > 0) {
-      offset += 30;
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#D97706';
-      ctx.font = '600 18px system-ui, -apple-system, sans-serif';
-      ctx.fillText('RECARGO APLICADO:', 70, totalsY + 45 + offset);
-
-      ctx.textAlign = 'right';
-      ctx.fillText(`+$ ${boleta.recargo.toLocaleString('es-AR')}`, width - 70, totalsY + 45 + offset);
-    }
+    ty += 38;
 
     // Divider
-    ctx.strokeStyle = '#94A3B8';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#CBD5E1';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(70, totalsY + 60 + offset);
-    ctx.lineTo(width - 70, totalsY + 60 + offset);
+    ctx.moveTo(65, ty - 12);
+    ctx.lineTo(width - 65, ty - 12);
     ctx.stroke();
 
-    // Highlighted Total
+    // 3. TOTAL GENERAL
     ctx.textAlign = 'left';
+    ctx.fillStyle = '#0F172A';
+    ctx.font = 'black 24px system-ui, -apple-system, sans-serif';
+    ctx.fillText('TOTAL GENERAL', 65, ty);
+
+    ctx.textAlign = 'right';
     ctx.fillStyle = '#0F172A';
     ctx.font = 'black 28px system-ui, -apple-system, sans-serif';
-    ctx.fillText('TOTAL BOLETA:', 70, totalsY + 105 + offset);
+    ctx.fillText(`$ ${totalGeneral.toLocaleString('es-AR')}`, width - 65, ty);
 
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#059669';
-    ctx.font = 'black 34px system-ui, -apple-system, sans-serif';
-    ctx.fillText(`$ ${boleta.total.toLocaleString('es-AR')}`, width - 70, totalsY + 105 + offset);
+    ty += 38;
 
-    // Payments & Balances
-    const payY = totalsY + 150 + offset;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.strokeStyle = '#E2E8F0';
-    ctx.beginPath();
-    ctx.roundRect(60, payY, width - 120, 100, 10);
-    ctx.fill();
-    ctx.stroke();
+    // 4. PAGÓ EN EFECTIVO (if applicable)
+    if (pagoEfectivo > 0) {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#059669';
+      ctx.font = '600 20px system-ui, -apple-system, sans-serif';
+      ctx.fillText('PAGÓ EN EFECTIVO', 65, ty);
 
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#334155';
-    ctx.font = '600 18px system-ui, -apple-system, sans-serif';
-    ctx.fillText(`PAGADO HOY: $ ${boleta.totalPagado.toLocaleString('es-AR')}`, 80, payY + 40);
+      ctx.textAlign = 'right';
+      ctx.fillText(`- $ ${pagoEfectivo.toLocaleString('es-AR')}`, width - 65, ty);
 
-    let efecTransStr = [];
-    if (boleta.pagoEfectivo > 0) efecTransStr.push(`Efectivo: $${boleta.pagoEfectivo.toLocaleString('es-AR')}`);
-    if (boleta.pagoTransferencia > 0) efecTransStr.push(`Transf: $${boleta.pagoTransferencia.toLocaleString('es-AR')}`);
-    if (boleta.pagoOtros > 0) efecTransStr.push(`Otros: $${boleta.pagoOtros.toLocaleString('es-AR')}`);
-    
-    if (efecTransStr.length > 0) {
-      ctx.fillStyle = '#64748B';
-      ctx.font = '500 16px system-ui, -apple-system, sans-serif';
-      ctx.fillText(`(${efecTransStr.join(' | ')})`, 80, payY + 70);
+      ty += 35;
     }
 
+    // 5. PAGÓ EN TRANSFERENCIA (if applicable)
+    if (pagoTransferencia > 0) {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#059669';
+      ctx.font = '600 20px system-ui, -apple-system, sans-serif';
+      ctx.fillText('PAGÓ EN TRANSFERENCIA', 65, ty);
+
+      ctx.textAlign = 'right';
+      ctx.fillText(`- $ ${pagoTransferencia.toLocaleString('es-AR')}`, width - 65, ty);
+
+      ty += 35;
+    }
+
+    // 6. TOTAL PAGADO
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#059669';
+    ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+    ctx.fillText('TOTAL PAGADO', 65, ty);
+
     ctx.textAlign = 'right';
-    ctx.fillStyle = boleta.saldoRestanteBoleta > 0 ? '#DC2626' : '#059669';
-    ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
-    ctx.fillText(`SALDO BOLETA: $ ${boleta.saldoRestanteBoleta.toLocaleString('es-AR')}`, width - 80, payY + 40);
+    ctx.font = 'bold 24px system-ui, -apple-system, sans-serif';
+    ctx.fillText(`$ ${totalPagado.toLocaleString('es-AR')}`, width - 65, ty);
 
+    ty += 42;
+
+    // Divider
+    ctx.strokeStyle = '#0F172A';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(65, ty - 16);
+    ctx.lineTo(width - 65, ty - 16);
+    ctx.stroke();
+
+    // 7. SALDO ACTUALIZADO
+    ctx.textAlign = 'left';
     ctx.fillStyle = '#0F172A';
-    ctx.font = 'black 20px system-ui, -apple-system, sans-serif';
-    ctx.fillText(`SALDO TOTAL CTE: $ ${boleta.nuevoSaldoCuenta.toLocaleString('es-AR')}`, width - 80, payY + 75);
+    ctx.font = 'black 26px system-ui, -apple-system, sans-serif';
+    ctx.fillText('SALDO ACTUALIZADO', 65, ty);
 
-    // 7. Footer
-    const footerY = totalsY + 290;
+    ctx.textAlign = 'right';
+    ctx.fillStyle = isAlDia ? '#059669' : '#DC2626';
+    ctx.font = 'black 30px system-ui, -apple-system, sans-serif';
+    ctx.fillText(`$ ${saldoActualizado.toLocaleString('es-AR')}`, width - 65, ty);
+
+    ty += 48;
+
+    // 8. ESTADO FINAL
+    const statusBg = isAlDia ? '#059669' : '#DC2626';
+    const statusLabel = isAlDia ? 'ESTADO: AL DÍA' : `ESTADO: DEBE $ ${saldoActualizado.toLocaleString('es-AR')}`;
+
+    ctx.fillStyle = statusBg;
+    ctx.beginPath();
+    ctx.roundRect(65, ty - 32, width - 130, 50, 10);
+    ctx.fill();
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'black 24px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(statusLabel, width / 2, ty + 2);
+
+    // 6. Footer
+    const footerY = totalsY + totalsBoxHeight + 30;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#0F172A';
     ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-    ctx.fillText('¡Muchas gracias por su compra!', width / 2, footerY + 30);
+    ctx.fillText('¡Muchas gracias por su compra!', width / 2, footerY + 25);
 
     ctx.fillStyle = '#64748B';
     ctx.font = '500 16px system-ui, -apple-system, sans-serif';
-    ctx.fillText('Menudencias C&C - Documento Digital Oficial', width / 2, footerY + 60);
+    ctx.fillText('Menudencias C&C - Documento Digital Oficial', width / 2, footerY + 55);
 
-    // Output Data URL
     resolve(canvas.toDataURL('image/png'));
   });
 }
