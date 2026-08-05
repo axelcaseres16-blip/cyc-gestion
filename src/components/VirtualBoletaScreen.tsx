@@ -15,6 +15,7 @@ import {
   finalizeVirtualBoleta,
   getStoredVirtualBoletas,
   saveVirtualBoletas,
+  saveProducts,
 } from '../utils/stockAndBoletasManager';
 import { generateBoletaImage } from '../utils/boletaImageGenerator';
 import {
@@ -26,22 +27,32 @@ import { formatCurrency, formatDate } from '../utils/formatters';
 import { VirtualBoletaModal } from './VirtualBoletaModal';
 import {
   Search,
-  Plus,
-  Trash2,
   Camera,
   CheckCircle2,
   AlertTriangle,
   FileText,
-  Building2,
   DollarSign,
   UserCheck,
   Zap,
-  MessageSquare,
   ShieldAlert,
-  Info,
-  RefreshCw,
   Sparkles,
 } from 'lucide-react';
+
+const BOLETA_PRODUCT_ORDER = [
+  'Hígado', 'Corazón', 'Lengua', 'Quijada', 'Rabo', 'Riñón', 'Bofe', 'Centro',
+  'Chinchulín', 'Mondongo', 'Tripa', 'Rueda', 'Seso', 'Molleja', 'Gañote',
+  'Pechito', 'Carré', 'Bondiola Fresca', 'Bondiola Congelada', 'Nuez',
+  'Cuajo Crudo', 'Cuajo Cocinado', 'Pajarilla', 'Tendones',
+];
+
+const normalizeProductName = (name: string) =>
+  name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+const productMatchesRow = (product: Product, rowName: string) => {
+  const normalizedProduct = normalizeProductName(product.nombre);
+  const normalizedRow = normalizeProductName(rowName);
+  return normalizedProduct.includes(normalizedRow) || normalizedRow.includes(normalizedProduct);
+};
 
 interface VirtualBoletaScreenProps {
   customers: CustomerWithBalance[];
@@ -85,16 +96,11 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       precioOverride: string;
       observacion: string;
     }[]
-  >([
-    {
-      id: `item_${Date.now()}_1`,
-      productId: products[0]?.id || '',
-      unidadesInput: '',
-      kilajeInput: '',
-      precioOverride: '',
-      observacion: '',
-    },
-  ]);
+  >([]);
+
+  const [showProductCreator, setShowProductCreator] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [newProductPrice, setNewProductPrice] = useState('');
 
   // Financial Overrides
   const [descuentoInput, setDescuentoInput] = useState<string>('0');
@@ -169,26 +175,55 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     }
   }, [selectedCustomer, items, fotoUrl]);
 
-  // Handle Add Item
-  const handleAddItem = () => {
-    const nextProd = products.find((p) => !items.some((it) => it.productId === p.id)) || products[0];
-    setItems((prev) => [
-      ...prev,
-      {
-        id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
-        productId: nextProd?.id || '',
-        unidadesInput: '',
-        kilajeInput: '',
-        precioOverride: '',
-        observacion: '',
-      },
-    ]);
+  const updateProductItem = (
+    productId: string,
+    field: 'unidadesInput' | 'kilajeInput',
+    value: string
+  ) => {
+    setItems((previous) => {
+      const existing = previous.find((item) => item.productId === productId);
+      if (existing) {
+        return previous.map((item) =>
+          item.productId === productId ? { ...item, [field]: value } : item
+        );
+      }
+      return [
+        ...previous,
+        {
+          id: `item_${Date.now()}_${productId}`,
+          productId,
+          unidadesInput: field === 'unidadesInput' ? value : '',
+          kilajeInput: field === 'kilajeInput' ? value : '',
+          precioOverride: '',
+          observacion: '',
+        },
+      ];
+    });
   };
 
-  // Handle Remove Item
-  const handleRemoveItem = (id: string) => {
-    if (items.length === 1) return;
-    setItems((prev) => prev.filter((it) => it.id !== id));
+  const handleCreateProduct = () => {
+    const name = newProductName.trim();
+    const price = parseFloat(newProductPrice.replace(',', '.'));
+    if (!name || !Number.isFinite(price) || price < 0) return;
+
+    const product: Product = {
+      id: `prod_${normalizeProductName(name).replace(/[^a-z0-9]+/g, '_')}_${Date.now()}`,
+      codigo: `MAN-${String(Date.now()).slice(-5)}`,
+      nombre: name,
+      tipoVenta: 'POR_KILO',
+      tipoControlStock: 'UNIDADES_Y_KILOS',
+      unidadMedida: 'kg',
+      precios: { GENERAL: price, MAYORISTA: price, ESPECIAL: price, PERSONALIZADA: price },
+      stockMinimoUnidades: 0,
+      stockMinimoKg: 0,
+      activo: true,
+    };
+    const updatedProducts = [...products, product];
+    saveProducts(updatedProducts);
+    setProducts(updatedProducts);
+    setNewProductName('');
+    setNewProductPrice('');
+    setShowProductCreator(false);
   };
 
   // Calculate Subtotal for an Item
@@ -420,26 +455,39 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     onSaleCompleted();
   };
 
+  const orderedProductRows = BOLETA_PRODUCT_ORDER.map((rowName) => ({
+    rowName,
+    product: products.find((product) => productMatchesRow(product, rowName)),
+  }));
+  const orderedProductIds = new Set(
+    orderedProductRows.flatMap((row) => (row.product ? [row.product.id] : []))
+  );
+  const additionalProductRows = products
+    .filter((product) => !orderedProductIds.has(product.id))
+    .map((product) => ({ rowName: product.nombre, product }));
+  const saldoAnterior = selectedCustomer?.saldoActual || 0;
+  const saldoActualizado = saldoAnterior + saldoRestante;
+
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
+    <div className="max-w-7xl mx-auto space-y-4 pb-10">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="border-b-2 border-slate-900 pb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center space-x-2">
-            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
+            <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-black uppercase px-2.5 py-0.5 flex items-center gap-1">
               <Zap className="w-3.5 h-3.5" /> Módulo Express
             </span>
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
               Boleta Virtual C&C
             </h1>
           </div>
-          <p className="text-xs sm:text-sm text-slate-300 mt-1">
+          <p className="text-xs sm:text-sm text-slate-600 mt-1">
             Generación de comprobante digital, cálculo automático por lista de precios y descuento de stock semanal.
           </p>
         </div>
 
         {restoredDraftNotice && (
-          <div className="bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs px-3 py-1.5 rounded-xl flex items-center space-x-2">
+          <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs px-3 py-1.5 flex items-center space-x-2">
             <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
             <span>Borrador autoguardado recuperado</span>
           </div>
@@ -447,8 +495,8 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       </div>
 
       {/* 1. SELECCIÓN DE CLIENTE Y SUCURSAL */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
-        <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2 border-b border-slate-100 pb-3">
+      <section className="border-b border-slate-300 pb-4 space-y-4">
+        <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2">
           <UserCheck className="w-5 h-5 text-blue-600" />
           <span>1. Selección de Cliente y Condición de Venta</span>
         </h2>
@@ -584,179 +632,73 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
             )}
           </div>
         )}
-      </div>
+      </section>
 
-      {/* 2. CARGA DE PRODUCTOS Y KILAJES */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2">
-            <FileText className="w-5 h-5 text-emerald-600" />
-            <span>2. Detalle de Productos y Kilajes Reales</span>
-          </h2>
-
-          <button
-            onClick={handleAddItem}
-            className="flex items-center space-x-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl shadow-2xs transition cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Agregar Producto</span>
-          </button>
+      {/* 2. DETALLE DE PRODUCTOS */}
+      <section className="border-y border-slate-300 py-3 sm:py-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+              <FileText className="w-4 h-4 text-emerald-700" /> Detalle de mercadería
+            </h2>
+            <p className="text-[11px] text-slate-500">Cargá únicamente unidades y kilos. El precio e importe se calculan automáticamente.</p>
+          </div>
+          {isDuenoOrAdmin && (
+            <button
+              onClick={() => setShowProductCreator((visible) => !visible)}
+              className="text-[11px] font-black uppercase text-emerald-800 border border-emerald-300 px-2.5 py-1.5 hover:bg-emerald-50 transition"
+            >
+              {showProductCreator ? 'Cerrar alta' : 'Agregar producto'}
+            </button>
+          )}
         </div>
 
-        {/* Product Items Rows */}
-        <div className="space-y-3">
-          {items.map((item, index) => {
-            const prod = products.find((p) => p.id === item.productId);
-            const stockItem = stockSummary.find((s) => s.product.id === item.productId);
+        {showProductCreator && isDuenoOrAdmin && (
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_150px_auto] gap-2 border-y border-amber-200 bg-amber-50/60 py-2">
+            <input value={newProductName} onChange={(e) => setNewProductName(e.target.value)} placeholder="Nombre del producto" className="border border-amber-300 bg-white px-2.5 py-2 text-xs font-semibold" />
+            <input value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} inputMode="decimal" placeholder="Precio por kg" className="border border-amber-300 bg-white px-2.5 py-2 text-xs font-semibold" />
+            <button onClick={handleCreateProduct} className="bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-700">Guardar</button>
+          </div>
+        )}
 
-            const { subtotal, precioAplicado } = calculateItemSubtotal(
-              item.productId,
-              item.unidadesInput,
-              item.kilajeInput,
-              item.precioOverride
-            );
+        <div className="overflow-x-auto border border-slate-300">
+          <table className="w-full min-w-[720px] border-collapse text-xs">
+            <thead className="bg-slate-900 text-white uppercase tracking-wide text-[10px]">
+              <tr>
+                <th className="w-[38%] px-3 py-2 text-left">Producto</th>
+                <th className="w-[13%] px-2 py-2 text-center">Unidades</th>
+                <th className="w-[13%] px-2 py-2 text-center">Kg</th>
+                <th className="w-[18%] px-3 py-2 text-right">Precio</th>
+                <th className="w-[18%] px-3 py-2 text-right">Importe</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {[...orderedProductRows, ...additionalProductRows].map(({ rowName, product }, index) => {
+                const item = product ? items.find((current) => current.productId === product.id) : undefined;
+                const calculation = product
+                  ? calculateItemSubtotal(product.id, item?.unidadesInput || '', item?.kilajeInput || '', '')
+                  : { subtotal: 0, precioAplicado: 0 };
+                const isConfigured = Boolean(product);
 
-            return (
-              <div
-                key={item.id}
-                className="bg-slate-50 p-3 sm:p-4 rounded-xl border border-slate-200 space-y-3 relative group"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                  {/* Selector Producto */}
-                  <div className="md:col-span-4">
-                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
-                      Producto #{index + 1}
-                    </label>
-                    <select
-                      value={item.productId}
-                      onChange={(e) => {
-                        const newId = e.target.value;
-                        setItems((prev) =>
-                          prev.map((it) => (it.id === item.id ? { ...it, productId: newId } : it))
-                        );
-                      }}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
-                    >
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nombre} ({p.tipoVenta === 'POR_UNIDAD' ? 'Por Unidad' : 'Por Kg'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Campo Unidades */}
-                  <div className="md:col-span-2">
-                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
-                      Unidades
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0"
-                      value={item.unidadesInput}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setItems((prev) =>
-                          prev.map((it) => (it.id === item.id ? { ...it, unidadesInput: val } : it))
-                        );
-                      }}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-extrabold text-slate-900"
-                    />
-                  </div>
-
-                  {/* Campo Kilaje Real */}
-                  <div className="md:col-span-2">
-                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
-                      Kilaje Real (kg)
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={item.kilajeInput}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setItems((prev) =>
-                          prev.map((it) => (it.id === item.id ? { ...it, kilajeInput: val } : it))
-                        );
-                      }}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-extrabold text-emerald-800"
-                    />
-                  </div>
-
-                  {/* Precio Aplicado */}
-                  <div className="md:col-span-2">
-                    <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
-                      Precio Lista ($)
-                    </label>
-                    {isDuenoOrAdmin ? (
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder={String(precioAplicado)}
-                        value={item.precioOverride}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setItems((prev) =>
-                            prev.map((it) => (it.id === item.id ? { ...it, precioOverride: val } : it))
-                          );
-                        }}
-                        className="w-full bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 text-xs font-black text-amber-900"
-                      />
-                    ) : (
-                      <div className="bg-slate-200 border border-slate-300 rounded-xl px-3 py-2 text-xs font-black text-slate-700">
-                        {formatCurrency(precioAplicado)}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Subtotal & Delete */}
-                  <div className="md:col-span-2 flex items-center justify-between space-x-2">
-                    <div className="text-right min-w-0">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Subtotal</span>
-                      <span className="text-sm font-black text-slate-900 truncate block">
-                        {formatCurrency(subtotal)}
-                      </span>
-                    </div>
-
-                    {items.length > 1 && (
-                      <button
-                        onClick={() => handleRemoveItem(item.id)}
-                        className="text-slate-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition cursor-pointer shrink-0"
-                        title="Eliminar producto"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Stock Indicator Strip */}
-                {stockItem && (
-                  <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200/80">
-                    <span className="text-slate-500 font-medium">
-                      Stock Semanal Disponible:{' '}
-                      <strong className="text-slate-800">
-                        {stockItem.unidadesDisponibles} u / {stockItem.kilogramosDisponibles.toLocaleString('es-AR')} kg
-                      </strong>
-                    </span>
-                    <span
-                      className={`font-black px-2 py-0.5 rounded-md text-[10px] uppercase ${
-                        stockItem.estadoSemaforo === 'VERDE'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : stockItem.estadoSemaforo === 'AMARILLO'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {stockItem.estadoSemaforo}
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                return (
+                  <tr key={product?.id || rowName} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                    <td className="px-3 py-1.5 font-bold text-slate-800">
+                      {rowName}
+                      {!isConfigured && <span className="ml-2 text-[10px] font-semibold text-amber-700">Sin configurar</span>}
+                    </td>
+                    <td className="p-1">
+                      <input disabled={!product} value={item?.unidadesInput || ''} onChange={(e) => product && updateProductItem(product.id, 'unidadesInput', e.target.value)} inputMode="decimal" placeholder="0" className="w-full border border-slate-300 bg-white px-2 py-1.5 text-center font-bold text-slate-900 disabled:bg-slate-100" />
+                    </td>
+                    <td className="p-1">
+                      <input disabled={!product} value={item?.kilajeInput || ''} onChange={(e) => product && updateProductItem(product.id, 'kilajeInput', e.target.value)} inputMode="decimal" placeholder="0,00" className="w-full border border-slate-300 bg-white px-2 py-1.5 text-center font-bold text-emerald-800 disabled:bg-slate-100" />
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-semibold text-slate-600">{isConfigured ? formatCurrency(calculation.precioAplicado) : '—'}</td>
+                    <td className="px-3 py-1.5 text-right font-black text-slate-900">{isConfigured ? formatCurrency(calculation.subtotal) : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
         {/* Warning if Sale exceeds Stock */}
@@ -791,52 +733,52 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
         )}
 
         {/* 3. RESUMEN Y TOTAL DE LA BOLETA */}
-        <div className="bg-slate-900 text-white rounded-xl p-4 sm:p-5 space-y-3">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 border border-slate-300 bg-white text-slate-900">
+          <div className="border-b sm:border-b-0 sm:border-r border-slate-200 px-3 py-2">
             <div>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Subtotal Productos</p>
-              <p className="text-lg font-black text-white">{formatCurrency(itemsSubtotalSum)}</p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Subtotal</p>
+              <p className="text-sm font-black text-slate-900">{formatCurrency(itemsSubtotalSum)}</p>
             </div>
 
-            <div className="flex items-center space-x-3 text-xs">
-              <div>
-                <label className="text-slate-400 font-bold block mb-0.5">Descuento ($)</label>
+            <div className="contents text-xs">
+              <div className="border-b sm:border-b-0 sm:border-r border-slate-200 px-3 py-2">
+                <label className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Descuento</label>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={descuentoInput}
                   onChange={(e) => setDescuentoInput(e.target.value)}
-                  className="w-24 bg-slate-800 border border-slate-700 text-emerald-400 font-bold rounded-lg px-2.5 py-1 text-xs"
+                  className="mt-1 w-full border-b border-slate-300 bg-transparent px-0 py-0.5 text-sm text-emerald-700 font-black outline-none"
                 />
               </div>
-              <div>
-                <label className="text-slate-400 font-bold block mb-0.5">Recargo ($)</label>
+              <div className="border-b sm:border-b-0 sm:border-r border-slate-200 px-3 py-2">
+                <label className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Recargo</label>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={recargoInput}
                   onChange={(e) => setRecargoInput(e.target.value)}
-                  className="w-24 bg-slate-800 border border-slate-700 text-amber-400 font-bold rounded-lg px-2.5 py-1 text-xs"
+                  className="mt-1 w-full border-b border-slate-300 bg-transparent px-0 py-0.5 text-sm text-amber-700 font-black outline-none"
                 />
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-base sm:text-lg font-black uppercase text-white tracking-wider">
-              TOTAL FINAL BOLETA:
+          <div className="col-span-2 sm:col-span-1 bg-slate-900 px-3 py-2 text-white">
+            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-300">
+              Total de la boleta
             </span>
-            <span className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight">
+            <span className="text-lg font-black text-emerald-400 tracking-tight">
               {formatCurrency(totalBoleta)}
             </span>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* 4. FORMA DE PAGO Y DEUDAS */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+      <div className="border-b border-slate-300 pb-3 space-y-3">
         <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2 border-b border-slate-100 pb-3">
-          <DollarSign className="w-5 h-5 text-emerald-600" />
+          <DollarSign className="w-4 h-4 text-emerald-700" />
           <span>3. Selección de Forma de Pago</span>
         </h2>
 
@@ -852,7 +794,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
             <button
               key={mode.id}
               onClick={() => setPagoTipo(mode.id as any)}
-              className={`p-3 rounded-xl border text-xs font-extrabold text-center transition cursor-pointer ${
+              className={`border px-2 py-2 text-[11px] font-extrabold text-center transition cursor-pointer ${
                 pagoTipo === mode.id
                   ? `${mode.color} ring-2 ring-slate-900 shadow-sm`
                   : 'border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -865,7 +807,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
 
         {/* Inputs para Pago Parcial o Mixto */}
         {(pagoTipo === 'MIXTO' || pagoTipo === 'PARCIAL') && (
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="border border-slate-200 bg-slate-50 p-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div>
               <label className="font-extrabold text-slate-700 block mb-1">Importe Efectivo ($)</label>
               <input
@@ -873,7 +815,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                 inputMode="decimal"
                 value={pagoEfectivoInput}
                 onChange={(e) => setPagoEfectivoInput(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900"
+                className="w-full bg-white border border-slate-300 px-3 py-2 font-bold text-slate-900"
               />
             </div>
             <div>
@@ -900,26 +842,35 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
         )}
 
         {/* Total Pagado vs Saldo Pendiente Summary */}
-        <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
-          <div>
-            <span className="text-slate-500 font-bold block">Total Abonado Hoy:</span>
-            <span className="font-black text-emerald-700 text-base">{formatCurrency(totalPagado)}</span>
+        <div className="grid grid-cols-2 sm:grid-cols-5 border border-slate-300 text-xs">
+          <div className="border-b sm:border-b-0 sm:border-r border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Saldo anterior</span>
+            <span className="font-black text-slate-900">{formatCurrency(saldoAnterior)}</span>
           </div>
-          <div>
-            <span className="text-slate-500 font-bold block">Saldo Pendiente esta Boleta:</span>
-            <span className="font-black text-red-600 text-base">{formatCurrency(saldoRestante)}</span>
+          <div className="border-b sm:border-b-0 sm:border-r border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Total de esta boleta</span>
+            <span className="font-black text-slate-900">{formatCurrency(totalBoleta)}</span>
           </div>
-          <div>
-            <span className="text-slate-500 font-bold block">Nuevo Saldo Cuenta Corriente:</span>
-            <span className="font-black text-slate-900 text-base">
-              {formatCurrency((selectedCustomer?.saldoActual || 0) + saldoRestante)}
+          <div className="border-b sm:border-b-0 sm:border-r border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Pago efectivo</span>
+            <span className="font-black text-emerald-700">{formatCurrency(efecNum)}</span>
+          </div>
+          <div className="border-b sm:border-b-0 sm:border-r border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Pago transferencia</span>
+            <span className="font-black text-blue-700">{formatCurrency(transNum)}</span>
+          </div>
+          <div className="col-span-2 sm:col-span-1 bg-slate-900 px-3 py-2 text-white">
+            <span className="block text-[10px] font-bold uppercase text-slate-300">Saldo actualizado</span>
+            <span className="font-black text-emerald-400">{formatCurrency(saldoActualizado)}</span>
+            <span className={`mt-1 block text-[10px] font-black uppercase ${saldoActualizado === 0 ? 'text-emerald-300' : 'text-amber-300'}`}>
+              {saldoActualizado === 0 ? '🟢 AL DÍA' : 'Saldo pendiente'}
             </span>
           </div>
         </div>
       </div>
 
       {/* 4. ADJUNTAR DOCUMENTO U OBSERVACIÓN (OPCIONAL) */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+      <div className="border-b border-slate-300 pb-4 space-y-3">
         <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center space-x-2">
             <Camera className="w-5 h-5 text-blue-600" />
