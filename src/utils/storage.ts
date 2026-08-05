@@ -1311,6 +1311,11 @@ export function getCustomerTimeline(
         esDebito: m.esDebito,
         usuario: m.registradoPor,
         fotoUrl: m.fotoUrl,
+        imageId: m.imageId,
+        boletaVirtualId: m.boletaVirtualId,
+        hasAttachment: m.hasAttachment,
+        attachmentType: m.attachmentType,
+        isAnulado: m.isAnulado,
       });
     });
 

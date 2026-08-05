@@ -88,16 +88,25 @@ export interface SyncQueueItem {
 export interface ImageBlobEntry {
   imageId: string;
   entityId: string;
-  entityType: 'RECEIPT' | 'STOCK_DOC' | 'PAYMENT_COMPROBANTE';
+  entityType: 'RECEIPT' | 'STOCK_DOC' | 'PAYMENT_COMPROBANTE' | 'VIRTUAL_BOLETA';
   blob: string | Blob; // DataURL o Blob
   fileName: string;
   pathName: string; // receipts/2026/08/cust123/vboleta_123.png
-  status: 'LOCAL_ONLY' | 'UPLOAD_PENDING' | 'UPLOADING' | 'UPLOADED' | 'UPLOAD_ERROR';
+  status: 'LOCAL_ONLY' | 'UPLOAD_PENDING' | 'UPLOADING' | 'UPLOADED' | 'UPLOAD_ERROR' | 'GUARDADA';
   remoteUrl?: string;
   createdAt: string;
   createdBy: string;
   retryCount: number;
   lastError?: string;
+  boletaVirtualId?: string;
+  numeroBoleta?: string;
+  customerId?: string;
+  branchId?: string;
+  movementIdPrincipal?: string;
+  mimeType?: 'image/png';
+  source?: 'VIRTUAL_BOLETA';
+  thumbnail?: string;
+  isAnulada?: boolean;
 }
 
 export interface SyncConflictItem {
@@ -504,6 +513,21 @@ export async function idbSaveEntity<T extends { id: string }>(
     });
   } catch (err) {
     console.error(`Error idbSaveEntity in ${storeName}:`, err);
+  }
+}
+
+export async function idbGetImageBlob(imageId: string): Promise<ImageBlobEntry | null> {
+  try {
+    const db = await initIndexedDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('imageBlobs', 'readonly');
+      const req = tx.objectStore('imageBlobs').get(imageId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) {
+    console.error('Error idbGetImageBlob:', err);
+    return null;
   }
 }
 

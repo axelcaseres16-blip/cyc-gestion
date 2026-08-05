@@ -9,6 +9,7 @@ import {
   VISIT_RESULT_LABELS,
 } from '../utils/formatters';
 import { getCustomerTimeline, getActivityLogs, addActivityLog } from '../utils/storage';
+import { getPersistedVirtualBoletaImageUrl } from '../utils/virtualBoletaImageStorage';
 import {
   ArrowLeft,
   Edit,
@@ -120,6 +121,11 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
       customer.alias || customer.nombre
     );
     window.open(url, '_blank');
+  };
+
+  const handleViewMovementImage = async (imageId: string | undefined, fallbackUrl: string | undefined, title: string) => {
+    const imageUrl = imageId ? await getPersistedVirtualBoletaImageUrl(imageId) : fallbackUrl;
+    if (imageUrl) onViewImage(imageUrl, title);
   };
 
   return (
@@ -404,7 +410,10 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
                             <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${badgeBg}`}>
                               {item.tipoItem}
                             </span>
-                            <h4 className="font-bold text-sm text-slate-900">{item.titulo}</h4>
+                            <h4 className="font-bold text-sm text-slate-900">{item.boletaVirtualId ? item.titulo.replace('Boleta Entregada', 'Boleta Virtual') : item.titulo}</h4>
+                            {item.isAnulado && (
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">ANULADA</span>
+                            )}
                           </div>
 
                           <span className="text-[11px] font-mono text-slate-400 font-bold">
@@ -428,13 +437,16 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
 
                         <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400">
                           <span>Registrado por: <strong>{item.usuario}</strong></span>
-                          {item.fotoUrl && (
+                          {item.hasAttachment && (
+                            <span className="text-emerald-700 font-bold flex items-center space-x-1"><CheckCircle2 className="w-3 h-3" /><span>Imagen guardada</span></span>
+                          )}
+                          {(item.fotoUrl || item.imageId) && (
                             <button
-                              onClick={() => onViewImage(item.fotoUrl!, item.titulo)}
+                              onClick={() => handleViewMovementImage(item.imageId, item.fotoUrl, item.titulo)}
                               className="text-blue-600 font-bold hover:underline flex items-center space-x-1"
                             >
                               <Camera className="w-3 h-3" />
-                              <span>Ver Foto Boleta</span>
+                              <span>Ver comprobante</span>
                             </button>
                           )}
                         </div>

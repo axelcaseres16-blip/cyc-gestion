@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Movement, CustomerWithBalance } from '../types';
 import { formatDate, formatCurrency } from '../utils/formatters';
 import { isMovementFinanciallyActive } from '../utils/movementFinancialState';
+import { getPersistedVirtualBoletaImageUrl } from '../utils/virtualBoletaImageStorage';
 import { Receipt, Search, Filter, Download, FileText, ArrowUpRight, ArrowDownLeft, SlidersHorizontal, Camera } from 'lucide-react';
 
 interface CuentaCorrienteScreenProps {
@@ -56,6 +57,13 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTipo, setSelectedTipo] = useState('TODOS');
   const [selectedCustomerId, setSelectedCustomerId] = useState('TODOS');
+
+  const handleViewMovementImage = async (movement: Movement) => {
+    const imageUrl = movement.imageId
+      ? await getPersistedVirtualBoletaImageUrl(movement.imageId)
+      : movement.fotoUrl;
+    if (imageUrl) onViewImage(imageUrl, `Boleta ${movement.numeroBoleta || ''}`);
+  };
 
   const filteredMovements = movements.filter((m) => {
     const cust = customers.find((c) => c.id === m.customerId);
@@ -258,13 +266,13 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between md:justify-end space-x-3 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
-                  {mov.fotoUrl && (
+                  {(mov.fotoUrl || mov.imageId) && (
                     <button
-                      onClick={() => onViewImage(mov.fotoUrl!, `Boleta ${mov.numeroBoleta || ''}`)}
+                      onClick={() => handleViewMovementImage(mov)}
                       className="flex items-center space-x-1 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-300 transition"
                     >
                       <Camera className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Foto</span>
+                      <span>Ver comprobante</span>
                     </button>
                   )}
 

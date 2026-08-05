@@ -13,12 +13,11 @@ import {
   getStoredProducts,
   getStockSummaryForPeriod,
   finalizeVirtualBoleta,
-  getStoredVirtualBoletas,
-  saveVirtualBoletas,
   saveProducts,
   OFFICIAL_BOLETA_CATALOG,
 } from '../utils/stockAndBoletasManager';
 import { generateBoletaImage } from '../utils/boletaImageGenerator';
+import { persistVirtualBoletaImage } from '../utils/virtualBoletaImageStorage';
 import {
   saveSaleDraft,
   getSaleDraft,
@@ -434,7 +433,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
 
     const numeroBoleta = `B-${String(Date.now()).slice(-6)}`;
 
-    const { virtualBoleta } = finalizeVirtualBoleta({
+    const { virtualBoleta, movementBoleta } = finalizeVirtualBoleta({
       numeroBoleta,
       customer: selectedCustomer,
       branchId: selectedBranch?.id,
@@ -455,14 +454,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     // Generate 1080px mobile-optimized image automatically
     try {
       const generatedImageUrl = await generateBoletaImage(virtualBoleta);
-      virtualBoleta.comprobanteImagenUrl = generatedImageUrl;
-
-      const storedBoletas = getStoredVirtualBoletas();
-      const bIdx = storedBoletas.findIndex((b) => b.id === virtualBoleta.id);
-      if (bIdx !== -1) {
-        storedBoletas[bIdx].comprobanteImagenUrl = generatedImageUrl;
-        saveVirtualBoletas(storedBoletas);
-      }
+      await persistVirtualBoletaImage(virtualBoleta, generatedImageUrl, movementBoleta.id);
     } catch (err) {
       console.error('Error generando imagen de boleta:', err);
     }

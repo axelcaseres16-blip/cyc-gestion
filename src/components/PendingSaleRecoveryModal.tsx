@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PendingCompletedSale, clearPendingCompletedSale, updatePendingSaleEnvioEstado } from '../utils/completedSaleStorage';
 import { formatCurrency } from '../utils/formatters';
+import { generateBoletaImage } from '../utils/boletaImageGenerator';
+import { getPersistedVirtualBoletaImageUrl, persistVirtualBoletaImage } from '../utils/virtualBoletaImageStorage';
 import {
   FileText,
   User,
@@ -26,15 +28,46 @@ export const PendingSaleRecoveryModal: React.FC<PendingSaleRecoveryModalProps> =
 }) => {
   const [sale, setSale] = useState<PendingCompletedSale>(pendingSale);
   const [statusMsg, setStatusMsg] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
 
-  const handleSaveImage = () => {
-    if (!sale.comprobanteImagenUrl) return;
+  useEffect(() => {
+    let objectUrl = '';
+    getPersistedVirtualBoletaImageUrl(sale.boleta?.imageId).then((url) => {
+      if (url) {
+        objectUrl = url.startsWith('blob:') ? url : '';
+        setImageUrl(url);
+      }
+    });
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [sale.boleta?.imageId]);
+
+  const ensurePersistedImage = async () => {
+    const storedImage = await getPersistedVirtualBoletaImageUrl(sale.boleta?.imageId);
+    if (storedImage) {
+      setImageUrl(storedImage);
+      return storedImage;
+    }
+    const sourceImage = sale.comprobanteImagenUrl || await generateBoletaImage(sale.boleta);
+    await persistVirtualBoletaImage(sale.boleta, sourceImage, sale.boleta.movementIdPrincipal);
+    setImageUrl(sourceImage);
+    return sourceImage;
+  };
+
+  const handleSaveImage = async () => {
+    const sourceImage = await ensurePersistedImage();
     const download = document.createElement('a');
-    download.href = sale.comprobanteImagenUrl;
+    download.href = sourceImage;
     download.download = `Boleta-CYC-${sale.boleta?.numeroBoleta || sale.id}.png`;
     document.body.appendChild(download);
     download.click();
     download.remove();
+  };
+
+  const handleViewImage = async () => {
+    const sourceImage = imageUrl || await ensurePersistedImage();
+    if (sourceImage && onViewImage) onViewImage(sourceImage, `Comprobante #${sale.boleta?.numeroBoleta || sale.id}`);
   };
 
   const handleMarkAsSent = () => {
@@ -63,7 +96,7 @@ export const PendingSaleRecoveryModal: React.FC<PendingSaleRecoveryModalProps> =
               <div className="flex items-center space-x-2">
                 <h3 className="font-extrabold text-base text-white">Comprobante Pendiente</h3>
                 <span className="bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
-                  Guardada en memoria
+                  Guardada localmente
                 </span>
               </div>
               <p className="text-xs text-emerald-200/80 font-medium">
@@ -140,9 +173,9 @@ export const PendingSaleRecoveryModal: React.FC<PendingSaleRecoveryModalProps> =
               <span>Marcar como enviado</span>
             </button>
 
-            {sale.comprobanteImagenUrl && onViewImage && (
+            {onViewImage && (
               <button
-                onClick={() => onViewImage(sale.comprobanteImagenUrl!, `Comprobante #${sale.boleta?.numeroBoleta || sale.id}`)}
+                onClick={handleViewImage}
                 className="col-span-1 sm:col-span-2 flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-800 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
               >
                 <Eye className="w-4 h-4 text-blue-600" />
@@ -150,15 +183,13 @@ export const PendingSaleRecoveryModal: React.FC<PendingSaleRecoveryModalProps> =
               </button>
             )}
 
-            {sale.comprobanteImagenUrl && (
-              <button
-                onClick={handleSaveImage}
-                className="col-span-1 sm:col-span-2 flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-800 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
-              >
-                <FileText className="w-4 h-4 text-slate-600" />
-                <span>Guardar imagen</span>
-              </button>
-            )}
+            <button
+              onClick={handleSaveImage}
+              className="col-span-1 sm:col-span-2 flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-800 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
+            >
+              <FileText className="w-4 h-4 text-slate-600" />
+              <span>Guardar imagen</span>
+            </button>
 
             <button
               onClick={handleDismiss}

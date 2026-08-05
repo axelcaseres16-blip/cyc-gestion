@@ -14,6 +14,8 @@ import {
   EnvioEstado,
 } from '../utils/completedSaleStorage';
 import { getStoredCustomers, saveCustomers } from '../utils/storage';
+import { getPersistedVirtualBoletaImageUrl, persistVirtualBoletaImage } from '../utils/virtualBoletaImageStorage';
+import { generateBoletaImage } from '../utils/boletaImageGenerator';
 import {
   X,
   CheckCircle2,
@@ -68,7 +70,23 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
   const [editedPhoneValue, setEditedPhoneValue] = useState(customerPhone);
   const [copiedSuccess, setCopiedSuccess] = useState(false);
   const [showConfirmReturnPrompt, setShowConfirmReturnPrompt] = useState(false);
+  const [persistedImageUrl, setPersistedImageUrl] = useState<string>('');
   const shortMessage = buildShortInvoiceMessage(boleta);
+  const imageUrl = persistedImageUrl || boleta.comprobanteImagenUrl || '';
+
+  useEffect(() => {
+    let objectUrl = '';
+    if (!boleta.imageId) return;
+    getPersistedVirtualBoletaImageUrl(boleta.imageId).then((url) => {
+      if (url) {
+        objectUrl = url.startsWith('blob:') ? url : '';
+        setPersistedImageUrl(url);
+      }
+    });
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [boleta.imageId]);
 
   // Sync state to persistent storage cc_last_completed_sale
   useEffect(() => {
@@ -79,7 +97,6 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
       customerName: boleta.customerName,
       customerPhone: currentPhone,
       branchName: boleta.branchName,
-      comprobanteImagenUrl: boleta.comprobanteImagenUrl,
       messagePrepared: shortMessage,
       total: boleta.total,
       totalPagado: boleta.totalPagado,
@@ -92,7 +109,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
       isClosed: false,
     };
     savePendingCompletedSale(salePayload);
-  }, [boleta, currentPhone, envioEstado, activeViewName, currentUser.nombre, shortMessage]);
+  }, [boleta, currentPhone, envioEstado, activeViewName, currentUser.nombre, shortMessage, imageUrl]);
 
   // Listen for visibility changes (returning to app from WhatsApp)
   useEffect(() => {
@@ -171,10 +188,30 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
     }
   };
 
-  const handleSaveImage = () => {
-    if (!boleta.comprobanteImagenUrl) return;
+  const ensurePersistedImage = async () => {
+    const storedImage = await getPersistedVirtualBoletaImageUrl(boleta.imageId);
+    if (storedImage) {
+      setPersistedImageUrl(storedImage);
+      return storedImage;
+    }
+
+    if (imageUrl) {
+      await persistVirtualBoletaImage(boleta, imageUrl, boleta.movementIdPrincipal);
+      setPersistedImageUrl(imageUrl);
+      return imageUrl;
+    }
+
+    const generatedImage = await generateBoletaImage(boleta);
+    await persistVirtualBoletaImage(boleta, generatedImage, boleta.movementIdPrincipal);
+    setPersistedImageUrl(generatedImage);
+    return generatedImage;
+  };
+
+  const handleSaveImage = async () => {
+    const sourceImage = await ensurePersistedImage();
+    if (!sourceImage) return;
     const download = document.createElement('a');
-    download.href = boleta.comprobanteImagenUrl;
+    download.href = sourceImage;
     download.download = `Boleta-CYC-${boleta.numeroBoleta}.png`;
     document.body.appendChild(download);
     download.click();
@@ -182,13 +219,9 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
   };
 
   const handleShareInvoiceImage = async () => {
-    if (!boleta.comprobanteImagenUrl) {
-      alert('Todavía no está disponible la imagen del comprobante.');
-      return;
-    }
-
     try {
-      const imageResponse = await fetch(boleta.comprobanteImagenUrl);
+      const sourceImage = await ensurePersistedImage();
+      const imageResponse = await fetch(sourceImage);
       const imageBlob = await imageResponse.blob();
       const imageFile = new File(
         [imageBlob],
@@ -333,9 +366,9 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
               >
                 No, volver a compartir
               </button>
-              {boleta.comprobanteImagenUrl && onViewImage && (
+              {imageUrl && onViewImage && (
                 <button
-                  onClick={() => onViewImage(boleta.comprobanteImagenUrl!, `Comprobante #${boleta.numeroBoleta}`)}
+                  onClick={() => onViewImage(imageUrl, `Comprobante #${boleta.numeroBoleta}`)}
                   className="px-3 py-2 bg-white border border-slate-300 text-slate-800 font-bold rounded-xl transition cursor-pointer"
                 >
                   Ver imagen
@@ -428,14 +461,17 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
           </div>
 
           {/* Generated 1080px Image Preview Container */}
-          {boleta.comprobanteImagenUrl ? (
+          {imageUrl ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
                   <FileText className="w-4 h-4 text-emerald-600" /> Comprobante Digital Generado (1080px)
                 </h4>
+                {boleta.hasGeneratedImage && (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Imagen guardada</span>
+                )}
                 <button
-                  onClick={() => onViewImage && onViewImage(boleta.comprobanteImagenUrl!, `Comprobante #${boleta.numeroBoleta}`)}
+                  onClick={() => onViewImage && onViewImage(imageUrl, `Comprobante #${boleta.numeroBoleta}`)}
                   className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
                 >
                   <Eye className="w-4 h-4" /> Ver en Grande
@@ -444,10 +480,10 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
 
               <div className="bg-slate-900 rounded-2xl p-2 border border-slate-700 overflow-hidden shadow-lg max-h-72 flex justify-center">
                 <img
-                  src={boleta.comprobanteImagenUrl}
+                  src={imageUrl}
                   alt={`Comprobante ${boleta.numeroBoleta}`}
                   className="max-h-68 object-contain rounded-lg cursor-pointer hover:scale-[1.01] transition"
-                  onClick={() => onViewImage && onViewImage(boleta.comprobanteImagenUrl!, `Comprobante #${boleta.numeroBoleta}`)}
+                  onClick={() => onViewImage && onViewImage(imageUrl, `Comprobante #${boleta.numeroBoleta}`)}
                 />
               </div>
             </div>
@@ -512,9 +548,18 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
           </button>
 
           <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
-            {boleta.comprobanteImagenUrl && (
+            {!imageUrl && (
               <button
-                onClick={() => onViewImage && onViewImage(boleta.comprobanteImagenUrl!, `Comprobante #${boleta.numeroBoleta}`)}
+                onClick={handleSaveImage}
+                className="w-full sm:w-auto flex items-center justify-center space-x-1.5 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 px-3.5 py-2.5 rounded-xl border border-amber-300 transition cursor-pointer"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Generar y guardar comprobante</span>
+              </button>
+            )}
+            {imageUrl && (
+              <button
+                onClick={() => onViewImage && onViewImage(imageUrl, `Comprobante #${boleta.numeroBoleta}`)}
                 className="w-full sm:w-auto flex items-center justify-center space-x-1.5 text-xs font-bold bg-slate-200 hover:bg-slate-300 text-slate-900 px-3.5 py-2.5 rounded-xl transition cursor-pointer"
               >
                 <Eye className="w-4 h-4" />

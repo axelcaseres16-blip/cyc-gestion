@@ -177,6 +177,9 @@ export interface Movement {
   anulacionOperationId?: string;
   movimientoInversoId?: string;
   boletaVirtualId?: string;
+  imageId?: string;
+  hasAttachment?: boolean;
+  attachmentType?: 'GENERATED_VIRTUAL_BOLETA';
 }
 
 export interface CustomerWithBalance extends Customer {
@@ -223,6 +226,11 @@ export interface TimelineItem {
   usuario: string;
   detalles?: string;
   fotoUrl?: string;
+  imageId?: string;
+  boletaVirtualId?: string;
+  hasAttachment?: boolean;
+  attachmentType?: 'GENERATED_VIRTUAL_BOLETA';
+  isAnulado?: boolean;
 }
 
 export type WhatsAppPostSaleBehavior = 'ALWAYS_AUTO' | 'ASK' | 'NONE';
@@ -284,6 +292,11 @@ export interface VirtualBoleta {
   nuevoSaldoCuenta: number;
   fotoBoletaFisicaUrl?: string;
   comprobanteImagenUrl?: string;
+  imageId?: string;
+  imageFileName?: string;
+  imageMimeType?: 'image/png';
+  hasGeneratedImage?: boolean;
+  movementIdPrincipal?: string;
   observacionesDocUrl?: string;
   sincronizado: boolean;
   isAnulado?: boolean;
