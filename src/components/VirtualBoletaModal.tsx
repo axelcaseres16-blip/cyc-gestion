@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { VirtualBoleta, AppUser, Customer } from '../types';
+import { VirtualBoleta, AppUser } from '../types';
 import { formatCurrency } from '../utils/formatters';
-import { generateCustomerVirtualBoletaWpMessage } from '../utils/stockAndBoletasManager';
 import {
   normalizeArgentineWhatsAppNumber,
   buildValidatedWhatsAppUrl,
@@ -17,7 +16,6 @@ import {
 import { getStoredCustomers, saveCustomers } from '../utils/storage';
 import {
   X,
-  Share2,
   CheckCircle2,
   FileText,
   User,
@@ -31,6 +29,11 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
+
+const buildShortInvoiceMessage = (boleta: VirtualBoleta) =>
+  `Hola ${boleta.customerName}, te enviamos el comprobante de la compra realizada hoy.\n` +
+  `Total de la boleta: ${formatCurrency(boleta.total)}\n` +
+  `Saldo actualizado: ${formatCurrency(boleta.nuevoSaldoCuenta)}\n\nMuchas gracias.`;
 
 interface VirtualBoletaModalProps {
   boleta: VirtualBoleta;
@@ -65,6 +68,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
   const [editedPhoneValue, setEditedPhoneValue] = useState(customerPhone);
   const [copiedSuccess, setCopiedSuccess] = useState(false);
   const [showConfirmReturnPrompt, setShowConfirmReturnPrompt] = useState(false);
+  const shortMessage = buildShortInvoiceMessage(boleta);
 
   // Sync state to persistent storage cc_last_completed_sale
   useEffect(() => {
@@ -76,7 +80,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
       customerPhone: currentPhone,
       branchName: boleta.branchName,
       comprobanteImagenUrl: boleta.comprobanteImagenUrl,
-      messagePrepared: generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta),
+      messagePrepared: shortMessage,
       total: boleta.total,
       totalPagado: boleta.totalPagado,
       saldoRestanteBoleta: boleta.saldoRestanteBoleta,
@@ -88,7 +92,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
       isClosed: false,
     };
     savePendingCompletedSale(salePayload);
-  }, [boleta, currentPhone, envioEstado, activeViewName, currentUser.nombre]);
+  }, [boleta, currentPhone, envioEstado, activeViewName, currentUser.nombre, shortMessage]);
 
   // Listen for visibility changes (returning to app from WhatsApp)
   useEffect(() => {
@@ -100,6 +104,12 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [envioEstado]);
+
+  useEffect(() => {
+    if (initialEnvioEstado === 'COMPARTIR_ABIERTO') {
+      setShowConfirmReturnPrompt(true);
+    }
+  }, [initialEnvioEstado]);
 
   // Determine Payment Status Badge
   let statusText = 'PAGADO';
@@ -116,8 +126,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
     statusCardColor = 'bg-red-50 border-red-200 text-red-800';
   }
 
-  // Handle WhatsApp button press with phone validation
-  const handleSendToCustomerWp = () => {
+  const handleOpenCustomerChat = () => {
     const norm = normalizeArgentineWhatsAppNumber(currentPhone);
     setPhoneResult(norm);
 
@@ -126,12 +135,9 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
       return;
     }
 
-    const text = generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta);
-    const { url } = buildValidatedWhatsAppUrl(currentPhone, text);
+    const { url } = buildValidatedWhatsAppUrl(currentPhone, shortMessage);
 
     if (url) {
-      setEnvioEstado('COMPARTIR_ABIERTO');
-      updatePendingSaleEnvioEstado('COMPARTIR_ABIERTO');
       window.open(url, '_blank');
     } else {
       setShowPhoneErrorModal(true);
@@ -160,37 +166,70 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
 
     if (norm.isValid) {
       setShowPhoneErrorModal(false);
-      // Auto trigger send after editing to valid phone
-      const text = generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta);
-      const url = `https://wa.me/${norm.normalized}?text=${encodeURIComponent(text)}`;
-      setEnvioEstado('COMPARTIR_ABIERTO');
-      updatePendingSaleEnvioEstado('COMPARTIR_ABIERTO');
+      const url = `https://wa.me/${norm.normalized}?text=${encodeURIComponent(shortMessage)}`;
       window.open(url, '_blank');
     }
   };
 
-  // Share via native Web Share API
-  const handleShareOther = async () => {
-    const text = generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta);
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `Boleta Virtual #${boleta.numeroBoleta} - Menudencias C&C`,
-          text: text,
-        });
-        setEnvioEstado('ENVIADO_CONFIRMADO');
-        updatePendingSaleEnvioEstado('ENVIADO_CONFIRMADO');
-      } catch (err) {
-        // Share cancelled
+  const handleSaveImage = () => {
+    if (!boleta.comprobanteImagenUrl) return;
+    const download = document.createElement('a');
+    download.href = boleta.comprobanteImagenUrl;
+    download.download = `Boleta-CYC-${boleta.numeroBoleta}.png`;
+    document.body.appendChild(download);
+    download.click();
+    download.remove();
+  };
+
+  const handleShareInvoiceImage = async () => {
+    if (!boleta.comprobanteImagenUrl) {
+      alert('Todavía no está disponible la imagen del comprobante.');
+      return;
+    }
+
+    try {
+      const imageResponse = await fetch(boleta.comprobanteImagenUrl);
+      const imageBlob = await imageResponse.blob();
+      const imageFile = new File(
+        [imageBlob],
+        `Boleta-CYC-${boleta.numeroBoleta}.png`,
+        { type: 'image/png' }
+      );
+      const shareData = {
+        files: [imageFile],
+        title: `Boleta C&C ${boleta.numeroBoleta}`,
+        text: shortMessage,
+      };
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [imageFile] })) {
+        setEnvioEstado('COMPARTIR_ABIERTO');
+        updatePendingSaleEnvioEstado('COMPARTIR_ABIERTO');
+        await navigator.share(shareData);
+        setShowConfirmReturnPrompt(true);
+        return;
       }
-    } else {
+
+      handleSaveImage();
       handleCopyText();
+      setEnvioEstado('PENDIENTE');
+      updatePendingSaleEnvioEstado('PENDIENTE');
+      alert('Tu navegador no permite adjuntar la imagen automáticamente. La boleta fue guardada en tu dispositivo. Abrí WhatsApp y adjuntala desde Descargas.');
+    } catch (err) {
+      if ((err as DOMException).name === 'AbortError') {
+        setEnvioEstado('PENDIENTE');
+        updatePendingSaleEnvioEstado('PENDIENTE');
+        return;
+      }
+      handleSaveImage();
+      handleCopyText();
+      setEnvioEstado('PENDIENTE');
+      updatePendingSaleEnvioEstado('PENDIENTE');
+      alert('No se pudo abrir el selector para adjuntar la imagen. La boleta fue guardada y el mensaje quedó copiado.');
     }
   };
 
   const handleCopyText = () => {
-    const text = generateCustomerVirtualBoletaWpMessage(boleta.customerName, boleta);
-    navigator.clipboard?.writeText(text);
+    navigator.clipboard?.writeText(shortMessage);
     setCopiedSuccess(true);
     setTimeout(() => setCopiedSuccess(false), 2500);
   };
@@ -274,7 +313,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
                 <p className="text-amber-700 font-medium">Confirmá el resultado del envío por WhatsApp.</p>
               </div>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
                 onClick={() => {
                   setEnvioEstado('ENVIADO_CONFIRMADO');
@@ -288,11 +327,25 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
               <button
                 onClick={() => {
                   setShowConfirmReturnPrompt(false);
-                  handleSendToCustomerWp();
+                  handleShareInvoiceImage();
                 }}
                 className="px-3 py-2 bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold rounded-xl transition cursor-pointer"
               >
-                Reintentar
+                No, volver a compartir
+              </button>
+              {boleta.comprobanteImagenUrl && onViewImage && (
+                <button
+                  onClick={() => onViewImage(boleta.comprobanteImagenUrl!, `Comprobante #${boleta.numeroBoleta}`)}
+                  className="px-3 py-2 bg-white border border-slate-300 text-slate-800 font-bold rounded-xl transition cursor-pointer"
+                >
+                  Ver imagen
+                </button>
+              )}
+              <button onClick={handleSaveImage} className="px-3 py-2 bg-white border border-slate-300 text-slate-800 font-bold rounded-xl transition cursor-pointer">
+                Guardar imagen
+              </button>
+              <button onClick={handleFinishAndNextCustomer} className="px-3 py-2 text-slate-600 font-bold transition cursor-pointer">
+                Ir al siguiente cliente
               </button>
               <button
                 onClick={() => {
@@ -451,11 +504,11 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
         <div className="bg-slate-100 px-4 sm:px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           
           <button
-            onClick={handleShareOther}
+            onClick={handleSaveImage}
             className="w-full sm:w-auto flex items-center justify-center space-x-1.5 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-3.5 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
           >
-            <Share2 className="w-4 h-4 text-slate-600" />
-            <span>Compartir por otro medio</span>
+            <Paperclip className="w-4 h-4 text-slate-600" />
+            <span>Guardar imagen</span>
           </button>
 
           <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
@@ -470,11 +523,27 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
             )}
 
             <button
-              onClick={handleSendToCustomerWp}
+              onClick={handleCopyText}
+              className="w-full sm:w-auto flex items-center justify-center space-x-1.5 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-3.5 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
+            >
+              {copiedSuccess ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+              <span>{copiedSuccess ? 'Mensaje copiado' : 'Copiar mensaje'}</span>
+            </button>
+
+            <button
+              onClick={handleOpenCustomerChat}
+              className="w-full sm:w-auto flex items-center justify-center space-x-1.5 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-3.5 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Abrir chat del cliente</span>
+            </button>
+
+            <button
+              onClick={handleShareInvoiceImage}
               className="w-full sm:w-auto flex items-center justify-center space-x-2 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl shadow-md transition cursor-pointer"
             >
               <MessageSquare className="w-4 h-4" />
-              <span>Enviar al cliente por WhatsApp</span>
+              <span>Compartir imagen por WhatsApp</span>
             </button>
 
             <button
@@ -569,11 +638,11 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
                   </button>
 
                   <button
-                    onClick={handleShareOther}
+                    onClick={handleSaveImage}
                     className="w-full flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-800 py-3 rounded-xl border border-slate-300 transition cursor-pointer"
                   >
-                    <Share2 className="w-4 h-4" />
-                    <span>Compartir por otro medio</span>
+                    <Paperclip className="w-4 h-4" />
+                    <span>Guardar imagen</span>
                   </button>
 
                   <button

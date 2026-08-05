@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { PendingCompletedSale, clearPendingCompletedSale, updatePendingSaleEnvioEstado } from '../utils/completedSaleStorage';
 import { formatCurrency } from '../utils/formatters';
-import { normalizeArgentineWhatsAppNumber, buildValidatedWhatsAppUrl } from '../utils/whatsappUtils';
 import {
   FileText,
   User,
@@ -10,7 +9,6 @@ import {
   Eye,
   X,
   ArrowRight,
-  AlertTriangle,
 } from 'lucide-react';
 
 interface PendingSaleRecoveryModalProps {
@@ -29,21 +27,14 @@ export const PendingSaleRecoveryModal: React.FC<PendingSaleRecoveryModalProps> =
   const [sale, setSale] = useState<PendingCompletedSale>(pendingSale);
   const [statusMsg, setStatusMsg] = useState('');
 
-  const phoneNorm = normalizeArgentineWhatsAppNumber(sale.customerPhone);
-
-  const handleSendWp = () => {
-    if (!phoneNorm.isValid) {
-      alert(`El teléfono del cliente (${sale.customerPhone || 'Vacío'}) no tiene un formato válido para WhatsApp. Abrí la boleta para corregirlo.`);
-      onContinue();
-      return;
-    }
-
-    const { url } = buildValidatedWhatsAppUrl(sale.customerPhone, sale.messagePrepared);
-    if (url) {
-      updatePendingSaleEnvioEstado('COMPARTIR_ABIERTO');
-      setSale((prev) => ({ ...prev, envioEstado: 'COMPARTIR_ABIERTO' }));
-      window.open(url, '_blank');
-    }
+  const handleSaveImage = () => {
+    if (!sale.comprobanteImagenUrl) return;
+    const download = document.createElement('a');
+    download.href = sale.comprobanteImagenUrl;
+    download.download = `Boleta-CYC-${sale.boleta?.numeroBoleta || sale.id}.png`;
+    document.body.appendChild(download);
+    download.click();
+    download.remove();
   };
 
   const handleMarkAsSent = () => {
@@ -134,11 +125,11 @@ export const PendingSaleRecoveryModal: React.FC<PendingSaleRecoveryModalProps> =
             </button>
 
             <button
-              onClick={handleSendWp}
+              onClick={onContinue}
               className="flex items-center justify-center space-x-2 bg-slate-900 hover:bg-black text-white py-2.5 rounded-xl transition cursor-pointer"
             >
               <MessageSquare className="w-4 h-4 text-emerald-400" />
-              <span>Enviar comprobante</span>
+              <span>Reabrir para compartir imagen</span>
             </button>
 
             <button
@@ -156,6 +147,16 @@ export const PendingSaleRecoveryModal: React.FC<PendingSaleRecoveryModalProps> =
               >
                 <Eye className="w-4 h-4 text-blue-600" />
                 <span>Ver imagen 1080px</span>
+              </button>
+            )}
+
+            {sale.comprobanteImagenUrl && (
+              <button
+                onClick={handleSaveImage}
+                className="col-span-1 sm:col-span-2 flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-800 py-2.5 rounded-xl border border-slate-300 transition cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-slate-600" />
+                <span>Guardar imagen</span>
               </button>
             )}
 
