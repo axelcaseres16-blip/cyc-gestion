@@ -161,15 +161,87 @@ export const DEFAULT_PRODUCTS: Product[] = [
   },
 ];
 
+type OfficialBoletaProduct = {
+  nombre: string;
+  codigo: string;
+  aliases: string[];
+};
+
+const normalizeProductCatalogName = (name: string) =>
+  name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+export const OFFICIAL_BOLETA_CATALOG: OfficialBoletaProduct[] = [
+  { nombre: 'Hígado', codigo: 'HIG-01', aliases: ['higado', 'higado vacuno'] },
+  { nombre: 'Corazón', codigo: 'COR-02', aliases: ['corazon', 'corazon vacuno'] },
+  { nombre: 'Lengua', codigo: 'LEN-03', aliases: ['lengua', 'lengua vacuna'] },
+  { nombre: 'Quijada', codigo: 'QUI-04', aliases: ['quijada'] },
+  { nombre: 'Rabo', codigo: 'RAB-05', aliases: ['rabo'] },
+  { nombre: 'Riñón', codigo: 'RIN-06', aliases: ['riñon', 'rinon'] },
+  { nombre: 'Bofe', codigo: 'BOF-07', aliases: ['bofe'] },
+  { nombre: 'Centro', codigo: 'CEN-08', aliases: ['centro', 'centro (molleja de corazon)'] },
+  { nombre: 'Chinchulín', codigo: 'CHI-09', aliases: ['chinchulin', 'chinchulines vacunos'] },
+  { nombre: 'Mondongo', codigo: 'MON-10', aliases: ['mondongo', 'mondongo blanqueado'] },
+  { nombre: 'Tripa', codigo: 'TRI-11', aliases: ['tripa'] },
+  { nombre: 'Rueda', codigo: 'RUE-12', aliases: ['rueda'] },
+  { nombre: 'Seso', codigo: 'SES-13', aliases: ['seso'] },
+  { nombre: 'Molleja', codigo: 'MOL-14', aliases: ['molleja'] },
+  { nombre: 'Gañote', codigo: 'GAN-15', aliases: ['gañote', 'ganote'] },
+  { nombre: 'Pechito', codigo: 'PEC-16', aliases: ['pechito'] },
+  { nombre: 'Carré', codigo: 'CAR-17', aliases: ['carre'] },
+  { nombre: 'Bondiola Fresca', codigo: 'BON-F-18', aliases: ['bondiola fresca'] },
+  { nombre: 'Bondiola Congelada', codigo: 'BON-C-19', aliases: ['bondiola congelada'] },
+  { nombre: 'Nuez', codigo: 'NUE-20', aliases: ['nuez'] },
+  { nombre: 'Cuajo Crudo', codigo: 'CUA-C-21', aliases: ['cuajo crudo'] },
+  { nombre: 'Cuajo Cocinado', codigo: 'CUA-O-22', aliases: ['cuajo cocinado'] },
+  { nombre: 'Pajarilla', codigo: 'PAJ-23', aliases: ['pajarilla'] },
+  { nombre: 'Tendones', codigo: 'TEN-24', aliases: ['tendones'] },
+];
+
+const createOfficialBoletaProduct = (definition: OfficialBoletaProduct): Product => ({
+  id: `prod_${normalizeProductCatalogName(definition.nombre).replace(/[^a-z0-9]+/g, '_')}`,
+  codigo: definition.codigo,
+  nombre: definition.nombre,
+  tipoVenta: 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO',
+  tipoControlStock: 'UNIDADES_Y_KILOS',
+  unidadMedida: 'kg',
+  precios: { GENERAL: 0, MAYORISTA: 0, ESPECIAL: 0, PERSONALIZADA: 0 },
+  stockMinimoUnidades: 0,
+  stockMinimoKg: 0,
+  activo: true,
+});
+
+export function ensureOfficialBoletaCatalog(products: Product[]): Product[] {
+  const usedIds = new Set<string>();
+  const officialProducts = OFFICIAL_BOLETA_CATALOG.map((definition) => {
+    const aliases = new Set(definition.aliases.map(normalizeProductCatalogName));
+    const existing = products.find(
+      (product) => !usedIds.has(product.id) && aliases.has(normalizeProductCatalogName(product.nombre))
+    );
+
+    if (!existing) return createOfficialBoletaProduct(definition);
+
+    usedIds.add(existing.id);
+    return existing.nombre === definition.nombre ? existing : { ...existing, nombre: definition.nombre };
+  });
+
+  return [...officialProducts, ...products.filter((product) => !usedIds.has(product.id))];
+}
+
 // Helper Products Storage
 export function getStoredProducts(): Product[] {
   try {
     const raw = localStorage.getItem(PRODUCTS_KEY);
     if (!raw) {
-      localStorage.setItem(PRODUCTS_KEY, JSON.stringify(DEFAULT_PRODUCTS));
-      return DEFAULT_PRODUCTS;
+      const initialProducts = ensureOfficialBoletaCatalog(DEFAULT_PRODUCTS);
+      localStorage.setItem(PRODUCTS_KEY, JSON.stringify(initialProducts));
+      return initialProducts;
     }
-    return JSON.parse(raw);
+    const storedProducts = JSON.parse(raw) as Product[];
+    const normalizedProducts = ensureOfficialBoletaCatalog(storedProducts);
+    if (JSON.stringify(storedProducts) !== JSON.stringify(normalizedProducts)) {
+      localStorage.setItem(PRODUCTS_KEY, JSON.stringify(normalizedProducts));
+    }
+    return normalizedProducts;
   } catch (err) {
     console.error('Error cargando productos:', err);
     return DEFAULT_PRODUCTS;

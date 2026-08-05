@@ -16,6 +16,7 @@ import {
   getStoredVirtualBoletas,
   saveVirtualBoletas,
   saveProducts,
+  OFFICIAL_BOLETA_CATALOG,
 } from '../utils/stockAndBoletasManager';
 import { generateBoletaImage } from '../utils/boletaImageGenerator';
 import {
@@ -38,21 +39,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-const BOLETA_PRODUCT_ORDER = [
-  'Hígado', 'Corazón', 'Lengua', 'Quijada', 'Rabo', 'Riñón', 'Bofe', 'Centro',
-  'Chinchulín', 'Mondongo', 'Tripa', 'Rueda', 'Seso', 'Molleja', 'Gañote',
-  'Pechito', 'Carré', 'Bondiola Fresca', 'Bondiola Congelada', 'Nuez',
-  'Cuajo Crudo', 'Cuajo Cocinado', 'Pajarilla', 'Tendones',
-];
-
 const normalizeProductName = (name: string) =>
   name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-
-const productMatchesRow = (product: Product, rowName: string) => {
-  const normalizedProduct = normalizeProductName(product.nombre);
-  const normalizedRow = normalizeProductName(rowName);
-  return normalizedProduct.includes(normalizedRow) || normalizedRow.includes(normalizedProduct);
-};
 
 interface VirtualBoletaScreenProps {
   customers: CustomerWithBalance[];
@@ -101,6 +89,9 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
   const [showProductCreator, setShowProductCreator] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [newProductPrice, setNewProductPrice] = useState('');
+  const [catalogProductId, setCatalogProductId] = useState<string>('');
+  const [catalogPriceInput, setCatalogPriceInput] = useState('');
+  const [unpricedProductNotice, setUnpricedProductNotice] = useState('');
 
   // Financial Overrides
   const [descuentoInput, setDescuentoInput] = useState<string>('0');
@@ -108,7 +99,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
 
   // Payment Selection State
   const [pagoTipo, setPagoTipo] = useState<
-    'DEBE' | 'EFECTIVO' | 'TRANSFERENCIA' | 'PARCIAL' | 'MIXTO'
+    'DEBE' | 'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO'
   >('DEBE');
 
   const [pagoEfectivoInput, setPagoEfectivoInput] = useState<string>('0');
@@ -205,6 +196,10 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     const name = newProductName.trim();
     const price = parseFloat(newProductPrice.replace(',', '.'));
     if (!name || !Number.isFinite(price) || price < 0) return;
+    if (products.some((product) => normalizeProductName(product.nombre) === normalizeProductName(name))) {
+      setUnpricedProductNotice('Ese producto ya existe en el catálogo. Configurá su precio desde esta administración.');
+      return;
+    }
 
     const product: Product = {
       id: `prod_${normalizeProductName(name).replace(/[^a-z0-9]+/g, '_')}_${Date.now()}`,
@@ -226,6 +221,32 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     setShowProductCreator(false);
   };
 
+  const handleSelectCatalogProduct = (product: Product) => {
+    setCatalogProductId(product.id);
+    setCatalogPriceInput(String(product.precios[activePriceList] ?? 0));
+  };
+
+  const handleSaveCatalogPrice = () => {
+    const price = parseFloat(catalogPriceInput.replace(',', '.'));
+    if (!catalogProductId || !Number.isFinite(price) || price < 0) return;
+
+    const updatedProducts = products.map((product) =>
+      product.id === catalogProductId
+        ? { ...product, precios: { ...product.precios, [activePriceList]: price } }
+        : product
+    );
+    saveProducts(updatedProducts);
+    setProducts(updatedProducts);
+    setUnpricedProductNotice('Precio actualizado para la lista actual.');
+  };
+
+  const getProductPrice = (product: Product) => {
+    if (selectedCustomer?.preciosPersonalizados?.[product.id] !== undefined) {
+      return selectedCustomer.preciosPersonalizados[product.id];
+    }
+    return product.precios[activePriceList] ?? 0;
+  };
+
   // Calculate Subtotal for an Item
   const calculateItemSubtotal = (
     productId: string,
@@ -239,7 +260,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     const unidades = parseFloat(uInput.replace(',', '.')) || 0;
     const kilajeReal = parseFloat(kgInput.replace(',', '.')) || 0;
 
-    let precioAplicado = prod.precios[activePriceList] || prod.precios.GENERAL;
+    let precioAplicado = getProductPrice(prod);
 
     // Custom customer prices
     if (
@@ -300,22 +321,18 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
 
   const totalBoleta = Math.max(0, itemsSubtotalSum - descuento + recargo);
 
-  // Sync Payment Inputs based on selected Payment Mode
+  // Payment mode only determines the visible fields; received amounts are always entered manually.
   useEffect(() => {
     if (pagoTipo === 'EFECTIVO') {
-      setPagoEfectivoInput(String(totalBoleta));
       setPagoTransferenciaInput('0');
-      setPagoOtrosInput('0');
     } else if (pagoTipo === 'TRANSFERENCIA') {
       setPagoEfectivoInput('0');
-      setPagoTransferenciaInput(String(totalBoleta));
-      setPagoOtrosInput('0');
     } else if (pagoTipo === 'DEBE') {
       setPagoEfectivoInput('0');
       setPagoTransferenciaInput('0');
-      setPagoOtrosInput('0');
     }
-  }, [pagoTipo, totalBoleta]);
+    setPagoOtrosInput('0');
+  }, [pagoTipo]);
 
   const efecNum = parseFloat(pagoEfectivoInput.replace(',', '.')) || 0;
   const transNum = parseFloat(pagoTransferenciaInput.replace(',', '.')) || 0;
@@ -455,18 +472,32 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     onSaleCompleted();
   };
 
-  const orderedProductRows = BOLETA_PRODUCT_ORDER.map((rowName) => ({
-    rowName,
-    product: products.find((product) => productMatchesRow(product, rowName)),
+  const orderedProductRows = OFFICIAL_BOLETA_CATALOG.map((definition) => ({
+    rowName: definition.nombre,
+    product: products.find((product) => product.nombre === definition.nombre),
   }));
   const orderedProductIds = new Set(
     orderedProductRows.flatMap((row) => (row.product ? [row.product.id] : []))
   );
   const additionalProductRows = products
-    .filter((product) => !orderedProductIds.has(product.id))
+    .filter((product) => !orderedProductIds.has(product.id) && product.codigo.startsWith('MAN-'))
     .map((product) => ({ rowName: product.nombre, product }));
   const saldoAnterior = selectedCustomer?.saldoActual || 0;
-  const saldoActualizado = saldoAnterior + saldoRestante;
+  const totalGeneral = saldoAnterior + totalBoleta;
+  const saldoActualizado = totalGeneral - totalPagado;
+  const estadoCuenta = saldoActualizado === 0
+    ? 'AL DÍA'
+    : saldoActualizado > 0
+      ? `DEBE ${formatCurrency(saldoActualizado)}`
+      : `A FAVOR ${formatCurrency(Math.abs(saldoActualizado))}`;
+  const estadoBoleta = saldoRestante <= 0
+    ? 'Boleta pagada'
+    : totalPagado > 0
+      ? 'Boleta con pago parcial'
+      : 'Boleta no pagada';
+  const catalogProduct = products.find((product) => product.id === catalogProductId);
+  const formatTableCurrency = (value: number) =>
+    value > 0 ? `$${value.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—';
 
   return (
     <div className="max-w-7xl mx-auto space-y-4 pb-10">
@@ -648,28 +679,58 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
               onClick={() => setShowProductCreator((visible) => !visible)}
               className="text-[11px] font-black uppercase text-emerald-800 border border-emerald-300 px-2.5 py-1.5 hover:bg-emerald-50 transition"
             >
-              {showProductCreator ? 'Cerrar alta' : 'Agregar producto'}
+              {showProductCreator ? 'Cerrar administración' : 'Administrar productos'}
             </button>
           )}
         </div>
 
         {showProductCreator && isDuenoOrAdmin && (
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_150px_auto] gap-2 border-y border-amber-200 bg-amber-50/60 py-2">
-            <input value={newProductName} onChange={(e) => setNewProductName(e.target.value)} placeholder="Nombre del producto" className="border border-amber-300 bg-white px-2.5 py-2 text-xs font-semibold" />
-            <input value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} inputMode="decimal" placeholder="Precio por kg" className="border border-amber-300 bg-white px-2.5 py-2 text-xs font-semibold" />
-            <button onClick={handleCreateProduct} className="bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-700">Guardar</button>
+          <div className="space-y-3 border-y border-slate-300 bg-slate-50 py-3">
+            <p className="text-[11px] font-semibold text-slate-600">Configurá el precio de la lista {activePriceList}. Los productos sin precio quedan bloqueados para reparto.</p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {orderedProductRows.map(({ rowName, product }) => (
+                <button
+                  key={product?.id || rowName}
+                  type="button"
+                  onClick={() => product && handleSelectCatalogProduct(product)}
+                  className={`border px-2 py-1.5 text-left text-[11px] font-bold ${catalogProductId === product?.id ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-slate-300 bg-white text-slate-700'}`}
+                >
+                  <span className="block truncate">{rowName}</span>
+                  <span className="text-[10px] font-medium text-slate-500">{product ? formatTableCurrency(getProductPrice(product)) : '—'}</span>
+                </button>
+              ))}
+            </div>
+            {catalogProduct && (
+              <div className="grid grid-cols-1 gap-2 border-t border-slate-200 pt-3 sm:grid-cols-[1fr_170px_auto]">
+                <span className="self-center text-xs font-black text-slate-800">{catalogProduct.nombre}</span>
+                <input value={catalogPriceInput} onChange={(e) => setCatalogPriceInput(e.target.value)} inputMode="decimal" placeholder="Precio por kg" className="border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold" />
+                <button onClick={handleSaveCatalogPrice} className="bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-700">Guardar precio</button>
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-2 border-t border-slate-200 pt-3 sm:grid-cols-[1fr_150px_auto]">
+              <input value={newProductName} onChange={(e) => setNewProductName(e.target.value)} placeholder="Nuevo producto" className="border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold" />
+              <input value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} inputMode="decimal" placeholder="Precio por kg" className="border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold" />
+              <button onClick={handleCreateProduct} className="border border-slate-900 bg-white px-3 py-2 text-xs font-black text-slate-900 hover:bg-slate-900 hover:text-white">Agregar al catálogo</button>
+            </div>
           </div>
         )}
 
-        <div className="overflow-x-auto border border-slate-300">
-          <table className="w-full min-w-[720px] border-collapse text-xs">
-            <thead className="bg-slate-900 text-white uppercase tracking-wide text-[10px]">
+        <div className="overflow-hidden border border-slate-300">
+          <table className="w-full table-fixed border-collapse text-[10px] sm:text-xs">
+            <colgroup>
+              <col className="w-[39%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+              <col className="w-[18%]" />
+              <col className="w-[19%]" />
+            </colgroup>
+            <thead className="bg-slate-900 text-white uppercase tracking-wide text-[8px] sm:text-[10px]">
               <tr>
-                <th className="w-[38%] px-3 py-2 text-left">Producto</th>
-                <th className="w-[13%] px-2 py-2 text-center">Unidades</th>
-                <th className="w-[13%] px-2 py-2 text-center">Kg</th>
-                <th className="w-[18%] px-3 py-2 text-right">Precio</th>
-                <th className="w-[18%] px-3 py-2 text-right">Importe</th>
+                <th className="px-1 py-1.5 text-left sm:px-3">Prod.</th>
+                <th className="px-0.5 py-1.5 text-center sm:px-2">Und.</th>
+                <th className="px-0.5 py-1.5 text-center sm:px-2">Kg</th>
+                <th className="px-1 py-1.5 text-right sm:px-3">Precio</th>
+                <th className="px-1 py-1.5 text-right sm:px-3">Imp.</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -678,28 +739,35 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                 const calculation = product
                   ? calculateItemSubtotal(product.id, item?.unidadesInput || '', item?.kilajeInput || '', '')
                   : { subtotal: 0, precioAplicado: 0 };
-                const isConfigured = Boolean(product);
+                const hasPrice = Boolean(product && getProductPrice(product) > 0);
 
                 return (
-                  <tr key={product?.id || rowName} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
-                    <td className="px-3 py-1.5 font-bold text-slate-800">
+                  <tr
+                    key={product?.id || rowName}
+                    onClick={() => !hasPrice && setUnpricedProductNotice(`${rowName} no tiene precio en la lista ${activePriceList}.${isDuenoOrAdmin ? ' Configuralo desde Administrar productos.' : ''}`)}
+                    className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} h-11 ${!hasPrice ? 'cursor-pointer' : ''}`}
+                  >
+                    <td className="break-words px-1 py-1 font-bold leading-tight text-slate-800 sm:px-3">
                       {rowName}
-                      {!isConfigured && <span className="ml-2 text-[10px] font-semibold text-amber-700">Sin configurar</span>}
                     </td>
-                    <td className="p-1">
-                      <input disabled={!product} value={item?.unidadesInput || ''} onChange={(e) => product && updateProductItem(product.id, 'unidadesInput', e.target.value)} inputMode="decimal" placeholder="0" className="w-full border border-slate-300 bg-white px-2 py-1.5 text-center font-bold text-slate-900 disabled:bg-slate-100" />
+                    <td className="p-0.5 sm:p-1">
+                      <input disabled={!hasPrice} value={item?.unidadesInput || ''} onChange={(e) => product && updateProductItem(product.id, 'unidadesInput', e.target.value)} inputMode="decimal" placeholder="0" className="h-7 min-w-0 w-full border border-slate-300 bg-white px-0.5 text-center text-[10px] font-bold text-slate-900 disabled:bg-slate-100 sm:px-2 sm:text-xs" />
                     </td>
-                    <td className="p-1">
-                      <input disabled={!product} value={item?.kilajeInput || ''} onChange={(e) => product && updateProductItem(product.id, 'kilajeInput', e.target.value)} inputMode="decimal" placeholder="0,00" className="w-full border border-slate-300 bg-white px-2 py-1.5 text-center font-bold text-emerald-800 disabled:bg-slate-100" />
+                    <td className="p-0.5 sm:p-1">
+                      <input disabled={!hasPrice} value={item?.kilajeInput || ''} onChange={(e) => product && updateProductItem(product.id, 'kilajeInput', e.target.value)} inputMode="decimal" placeholder="0" className="h-7 min-w-0 w-full border border-slate-300 bg-white px-0.5 text-center text-[10px] font-bold text-emerald-800 disabled:bg-slate-100 sm:px-2 sm:text-xs" />
                     </td>
-                    <td className="px-3 py-1.5 text-right font-semibold text-slate-600">{isConfigured ? formatCurrency(calculation.precioAplicado) : '—'}</td>
-                    <td className="px-3 py-1.5 text-right font-black text-slate-900">{isConfigured ? formatCurrency(calculation.subtotal) : '—'}</td>
+                    <td className="whitespace-nowrap px-1 py-1 text-right text-[9px] font-semibold text-slate-600 sm:px-3 sm:text-xs">{hasPrice ? formatTableCurrency(calculation.precioAplicado) : '—'}</td>
+                    <td className="whitespace-nowrap px-1 py-1 text-right text-[9px] font-black text-slate-900 sm:px-3 sm:text-xs">{hasPrice ? formatTableCurrency(calculation.subtotal) : '—'}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+
+        {unpricedProductNotice && (
+          <p className="text-[11px] font-medium text-slate-600">{unpricedProductNotice}</p>
+        )}
 
         {/* Warning if Sale exceeds Stock */}
         {hasStockExceeded && (
@@ -783,13 +851,12 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
         </h2>
 
         {/* Selector Modos de Pago */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[
-            { id: 'DEBE', label: 'No Pagó (A Cta)', color: 'border-red-300 bg-red-50 text-red-800' },
-            { id: 'EFECTIVO', label: 'Efectivo Completo', color: 'border-emerald-300 bg-emerald-50 text-emerald-800' },
-            { id: 'TRANSFERENCIA', label: 'Transferencia Compl.', color: 'border-blue-300 bg-blue-50 text-blue-800' },
-            { id: 'PARCIAL', label: 'Pago Parcial', color: 'border-amber-300 bg-amber-50 text-amber-800' },
-            { id: 'MIXTO', label: 'Pago Mixto', color: 'border-purple-300 bg-purple-50 text-purple-800' },
+            { id: 'DEBE', label: 'No pagó', color: 'border-red-300 bg-red-50 text-red-800' },
+            { id: 'EFECTIVO', label: 'Pagó en efectivo', color: 'border-emerald-300 bg-emerald-50 text-emerald-800' },
+            { id: 'TRANSFERENCIA', label: 'Pagó en transferencia', color: 'border-blue-300 bg-blue-50 text-blue-800' },
+            { id: 'MIXTO', label: 'Efectivo y transferencia', color: 'border-purple-300 bg-purple-50 text-purple-800' },
           ].map((mode) => (
             <button
               key={mode.id}
@@ -805,11 +872,11 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
           ))}
         </div>
 
-        {/* Inputs para Pago Parcial o Mixto */}
-        {(pagoTipo === 'MIXTO' || pagoTipo === 'PARCIAL') && (
-          <div className="border border-slate-200 bg-slate-50 p-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div>
-              <label className="font-extrabold text-slate-700 block mb-1">Importe Efectivo ($)</label>
+        {pagoTipo !== 'DEBE' && (
+          <div className={`border border-slate-200 bg-slate-50 p-3 grid gap-3 text-xs ${pagoTipo === 'MIXTO' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+            {(pagoTipo === 'EFECTIVO' || pagoTipo === 'MIXTO') && (
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Efectivo recibido ($)</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -817,9 +884,11 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                 onChange={(e) => setPagoEfectivoInput(e.target.value)}
                 className="w-full bg-white border border-slate-300 px-3 py-2 font-bold text-slate-900"
               />
-            </div>
-            <div>
-              <label className="font-extrabold text-slate-700 block mb-1">Importe Transferencia ($)</label>
+              </div>
+            )}
+            {(pagoTipo === 'TRANSFERENCIA' || pagoTipo === 'MIXTO') && (
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Transferencia recibida ($)</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -827,22 +896,48 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                 onChange={(e) => setPagoTransferenciaInput(e.target.value)}
                 className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900"
               />
-            </div>
-            <div>
-              <label className="font-extrabold text-slate-700 block mb-1">Otro Medio ($)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={pagoOtrosInput}
-                onChange={(e) => setPagoOtrosInput(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900"
-              />
-            </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Total Pagado vs Saldo Pendiente Summary */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 border border-slate-300 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-4 border border-slate-300 text-xs">
+          <div className="border-b border-r border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Total de la boleta</span>
+            <span className="font-black text-slate-900">{formatCurrency(totalBoleta)}</span>
+          </div>
+          <div className="border-b sm:border-r border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Saldo anterior</span>
+            <span className="font-black text-slate-900">{formatCurrency(saldoAnterior)}</span>
+          </div>
+          <div className="border-b border-r sm:border-b-0 border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Total general</span>
+            <span className="font-black text-slate-900">{formatCurrency(totalGeneral)}</span>
+          </div>
+          <div className="border-b sm:border-b-0 border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Pago en efectivo</span>
+            <span className="font-black text-emerald-700">{formatCurrency(efecNum)}</span>
+          </div>
+          <div className="border-r sm:border-r border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Pago en transferencia</span>
+            <span className="font-black text-blue-700">{formatCurrency(transNum)}</span>
+          </div>
+          <div className="border-r border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Total pagado</span>
+            <span className="font-black text-slate-900">{formatCurrency(totalPagado)}</span>
+          </div>
+          <div className="border-r border-slate-200 px-3 py-2">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">Saldo actualizado</span>
+            <span className="font-black text-slate-900">{formatCurrency(saldoActualizado)}</span>
+          </div>
+          <div className="bg-slate-900 px-3 py-2 text-white">
+            <span className="block text-[10px] font-bold uppercase text-slate-300">Estado final</span>
+            <span className={`font-black ${saldoActualizado === 0 ? 'text-emerald-300' : saldoActualizado > 0 ? 'text-amber-300' : 'text-blue-300'}`}>{estadoCuenta}</span>
+          </div>
+        </div>
+        <p className="text-xs font-bold text-slate-700">Estado de la boleta: <span className="text-slate-900">{estadoBoleta}</span></p>
+        <div className="hidden">
           <div className="border-b sm:border-b-0 sm:border-r border-slate-200 px-3 py-2">
             <span className="block text-[10px] font-bold uppercase text-slate-500">Saldo anterior</span>
             <span className="font-black text-slate-900">{formatCurrency(saldoAnterior)}</span>
