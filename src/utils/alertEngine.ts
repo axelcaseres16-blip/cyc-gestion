@@ -1,4 +1,5 @@
 import { CustomerWithBalance, Movement } from '../types';
+import { isMovementFinanciallyActive } from './movementFinancialState';
 
 export type AlertPriority = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA';
 
@@ -44,7 +45,7 @@ export function generateSystemAlerts(
 
   // 2. Boletas sin Fotografía Obligatoria (Prioridad Alta)
   movements.forEach((m) => {
-    if (m.tipo === 'BOLETA' && !m.fotoUrl && !m.isAnulado) {
+    if (m.tipo === 'BOLETA' && !m.fotoUrl && isMovementFinanciallyActive(m)) {
       const cust = customers.find((c) => c.id === m.customerId);
       alerts.push({
         id: `alt_foto_${m.id}`,

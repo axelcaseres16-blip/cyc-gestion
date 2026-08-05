@@ -1,4 +1,5 @@
 import { CustomerWithBalance, Movement } from '../types';
+import { isMovementFinanciallyActive } from './movementFinancialState';
 
 export interface HealthFactor {
   isPositive: boolean;
@@ -24,7 +25,7 @@ export function calculateCustomerHealth(
   movements: Movement[] = []
 ): CustomerHealthResult {
   const now = new Date();
-  const customerMovements = movements.filter(m => m.customerId === customer.id && !m.isAnulado);
+  const customerMovements = movements.filter(m => m.customerId === customer.id && isMovementFinanciallyActive(m));
 
   // 1. Días desde última compra
   let daysSinceLastPurchase = 999;

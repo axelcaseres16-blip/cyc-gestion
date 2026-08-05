@@ -51,6 +51,7 @@ export function getAuditLogs(): ComprehensiveAuditLog[] {
  * Registra una acción en el Historial de Auditoría
  */
 export function recordAuditLog(logData: {
+  id?: string;
   usuario: string;
   username?: string;
   rol?: UserRole;
@@ -63,11 +64,15 @@ export function recordAuditLog(logData: {
 }): ComprehensiveAuditLog {
   try {
     const logs = getAuditLogs();
+    if (logData.id) {
+      const existing = logs.find((log) => log.id === logData.id);
+      if (existing) return existing;
+    }
     const now = new Date();
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
     const newLog: ComprehensiveAuditLog = {
-      id: `audit_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      id: logData.id || `audit_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       timestamp: now.toISOString(),
       fecha: now.toLocaleDateString('es-AR'),
       hora: now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CustomerWithBalance, Movement, AppUser } from '../types';
 import { formatCurrency, formatDate, getDaysAgo, buildWhatsAppDebtMessageUrl } from '../utils/formatters';
 import { getLastAutoSnapshot } from '../utils/storage';
+import { isMovementFinanciallyActive } from '../utils/movementFinancialState';
 import {
   DollarSign,
   Users,
@@ -88,12 +89,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Ventas y Cobranzas de hoy
   const boletasHoy = movements.filter(
-    (m) => !m.isAnulado && m.tipo === 'BOLETA' && m.fecha.startsWith(hoyStr)
+    (m) => isMovementFinanciallyActive(m) && m.tipo === 'BOLETA' && m.fecha.startsWith(hoyStr)
   );
   const totalVentasHoy = boletasHoy.reduce((acc, m) => acc + m.monto, 0);
 
   const pagosHoy = movements.filter(
-    (m) => !m.isAnulado && m.tipo === 'PAGO' && m.fecha.startsWith(hoyStr)
+    (m) => isMovementFinanciallyActive(m) && m.tipo === 'PAGO' && m.fecha.startsWith(hoyStr)
   );
   const totalCobradoHoy = pagosHoy.reduce((acc, m) => acc + m.monto, 0);
 
@@ -110,7 +111,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Últimos 6 movimientos globales
   const ultimosMovimientos = [...movements]
-    .filter((m) => !m.isAnulado)
+    .filter(isMovementFinanciallyActive)
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
     .slice(0, 6);
 

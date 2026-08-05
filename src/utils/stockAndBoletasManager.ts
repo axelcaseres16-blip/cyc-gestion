@@ -10,15 +10,25 @@ import {
   Customer,
   CustomerBranch,
   Movement,
+  UserRole,
 } from '../types';
 import { getStoredCustomers, saveCustomers, getStoredMovements, saveMovements } from './storage';
 import { recordAuditLog } from './auditLogger';
+import { isMovementFinanciallyActive } from './movementFinancialState';
 import {
   generateOperationId,
   idbSaveQueueItem,
+  idbSaveQueueItemStrict,
   idbSaveEntity,
+  idbSaveEntityStrict,
   idbSaveImageBlob,
   getDeviceId,
+  idbGetIncompleteSaleCancellationItems,
+  idbGetAllQueueItems,
+  AtomicSaleCancellationPayload,
+  SaleCancellationStage,
+  SaleCancellationStockRestore,
+  SyncQueueItem,
 } from './indexedDBEngine';
 import { runFullSyncProcess } from './syncEngine';
 
@@ -527,7 +537,7 @@ export function finalizeVirtualBoleta(params: {
 
   // Calculate existing customer balance from movements
   const allMovements = getStoredMovements();
-  const custMovements = allMovements.filter((m) => m.customerId === targetCust.id && !m.isAnulado);
+  const custMovements = allMovements.filter((m) => m.customerId === targetCust.id && isMovementFinanciallyActive(m));
 
   custMovements.forEach((m) => {
     if (m.esDebito) {
@@ -760,85 +770,537 @@ export function finalizeVirtualBoleta(params: {
   return { virtualBoleta, movementBoleta };
 }
 
-// Anular Virtual Boleta & Reverse Stock + Cuenta Corriente
-export function anularVirtualBoleta(params: {
+export interface VirtualBoletaCancellationResult {
+  status: 'ANULADA' | 'YA_ANULADA' | 'NO_ENCONTRADA' | 'EN_PROCESO';
+  message: string;
+  boleta?: VirtualBoleta;
+  movimientosAnulados: Movement[];
+  movimientosStockGenerados: StockMovement[];
+}
+
+let cancellationFailureAfterStageForTesting: SaleCancellationStage | null = null;
+let cancellationStockRestoreFailureAfterForTesting: number | null = null;
+const activeCancellationResumes = new Map<string, Promise<VirtualBoletaCancellationResult>>();
+const CANCELLATION_LOCK_PREFIX = 'cyc_sale_cancellation_lock_';
+const CANCELLATION_LOCK_TTL_MS = 30_000;
+
+/** Permite simular un cierre abrupto después de una etapa ya persistida. */
+export function setCancellationFailureAfterStageForTesting(stage: SaleCancellationStage | null): void {
+  cancellationFailureAfterStageForTesting = stage;
+}
+
+/** Simula un cierre luego de persistir N restauraciones de stock individuales. */
+export function setCancellationStockRestoreFailureAfterForTesting(count: number | null): void {
+  cancellationStockRestoreFailureAfterForTesting = count;
+}
+
+function throwIfCancellationFailureWasRequested(stage: SaleCancellationStage): void {
+  if (cancellationFailureAfterStageForTesting === stage) {
+    cancellationFailureAfterStageForTesting = null;
+    throw new Error(`Fallo técnico simulado después de ${stage}`);
+  }
+}
+
+function acquireCancellationLock(operationId: string): string | null {
+  try {
+    const key = `${CANCELLATION_LOCK_PREFIX}${operationId}`;
+    const now = Date.now();
+    const current = JSON.parse(localStorage.getItem(key) || 'null') as { token?: string; expiresAt?: number } | null;
+    if (current?.expiresAt && current.expiresAt > now) return null;
+
+    const token = `${getDeviceId()}_${now}_${Math.random().toString(36).slice(2, 8)}`;
+    localStorage.setItem(key, JSON.stringify({ token, expiresAt: now + CANCELLATION_LOCK_TTL_MS }));
+    const saved = JSON.parse(localStorage.getItem(key) || 'null') as { token?: string } | null;
+    return saved?.token === token ? token : null;
+  } catch {
+    // IndexedDB y los IDs determinísticos siguen evitando duplicados si el
+    // navegador bloquea localStorage (por ejemplo, en modo restringido).
+    return 'local-lock-unavailable';
+  }
+}
+
+function releaseCancellationLock(operationId: string, token: string): void {
+  if (token === 'local-lock-unavailable') return;
+  try {
+    const key = `${CANCELLATION_LOCK_PREFIX}${operationId}`;
+    const current = JSON.parse(localStorage.getItem(key) || 'null') as { token?: string } | null;
+    if (current?.token === token) localStorage.removeItem(key);
+  } catch {
+    // El lock vence solo; no interfiere con la recuperación posterior.
+  }
+}
+
+function buildCancellationStockRestorations(
+  operationId: string,
+  boleta: VirtualBoleta
+): SaleCancellationStockRestore[] {
+  const saleStockMovements = getStoredStockMovements().filter(
+    (movement) =>
+      movement.referenciaOrigenId === boleta.id &&
+      movement.tipo === 'VENTA_CLIENTE' &&
+      movement.direccion === 'SALIDA'
+  );
+
+  if (saleStockMovements.length > 0) {
+    return saleStockMovements.map((movement) => ({
+      sourceStockMovementId: movement.id,
+      restorationMovementId: `sm_anul_${operationId}_${movement.id}`,
+      semanaId: movement.semanaId,
+      productId: movement.productId,
+      productName: movement.productName,
+      unidades: movement.unidades,
+      kilogramos: movement.kilogramos,
+    }));
+  }
+
+  const activePeriod = getActiveStockPeriod();
+  return boleta.items.map((item, index) => ({
+    restorationMovementId: `sm_anul_${operationId}_${boleta.id}_${index}`,
+    semanaId: activePeriod.id,
+    productId: item.productId,
+    productName: item.productName,
+    unidades: item.unidades,
+    kilogramos: item.kilajeReal,
+  }));
+}
+
+async function persistCancellationStage(
+  item: SyncQueueItem,
+  stage: SaleCancellationStage,
+  lastError?: string
+): Promise<SyncQueueItem> {
+  const nextItem: SyncQueueItem = {
+    ...item,
+    status: stage === 'COMPLETED' ? 'COMPLETED' : 'PENDING',
+    payload: {
+      ...(item.payload as AtomicSaleCancellationPayload),
+      stage,
+      completedStages: Array.from(new Set([
+        ...((item.payload as AtomicSaleCancellationPayload).completedStages || []),
+        stage,
+      ])),
+      lastError,
+    } satisfies AtomicSaleCancellationPayload,
+  };
+  await idbSaveQueueItemStrict(nextItem);
+  return nextItem;
+}
+
+function getCancellationResult(item: SyncQueueItem, status: VirtualBoletaCancellationResult['status'], message: string): VirtualBoletaCancellationResult {
+  const payload = item.payload as AtomicSaleCancellationPayload;
+  const boleta = getStoredVirtualBoletas().find((current) => current.id === payload.boletaVirtualId);
+  const movementIds = new Set(payload.movementIds);
+  const stockIds = new Set(payload.stockRestorations.map((restore) => restore.restorationMovementId));
+
+  return {
+    status,
+    message,
+    boleta,
+    movimientosAnulados: getStoredMovements().filter((movement) => movementIds.has(movement.id) && movement.isAnulado),
+    movimientosStockGenerados: getStoredStockMovements().filter((movement) => stockIds.has(movement.id)),
+  };
+}
+
+function isDurableCancellationPayload(payload: unknown): payload is AtomicSaleCancellationPayload {
+  return Boolean(payload && typeof payload === 'object' && 'stage' in payload && 'movementIds' in payload && 'stockRestorations' in payload);
+}
+
+function completeLegacyCancellationOperation(item: SyncQueueItem): SyncQueueItem {
+  const legacy = item.payload as any;
+  const boletaVirtualId = legacy.boletaVirtualId || item.entityId;
+  const boleta = getStoredVirtualBoletas().find((current) => current.id === boletaVirtualId);
+  if (!boletaVirtualId || !boleta?.isAnulado) {
+    throw new Error('La anulación antigua no contiene datos suficientes para migrarse automáticamente.');
+  }
+  const generatedStock = Array.isArray(legacy.movimientosStockGenerados) ? legacy.movimientosStockGenerados : [];
+  const migratedPayload: AtomicSaleCancellationPayload = {
+    boletaVirtualId,
+    motivo: legacy.motivo || 'Anulación registrada antes de la recuperación durable',
+    usuario: legacy.usuario || item.createdBy,
+    username: legacy.username,
+    rol: legacy.rol,
+    deviceId: legacy.deviceId || item.deviceId,
+    createdAtLocal: legacy.createdAtLocal || item.createdAt,
+    stage: 'COMPLETED',
+    completedStages: ['COMPLETED'],
+    movementIds: Array.isArray(legacy.movimientosAnulados) ? legacy.movimientosAnulados.map((movement: Movement) => movement.id) : [],
+    stockRestorations: generatedStock.map((movement: StockMovement) => ({
+      restorationMovementId: movement.id,
+      semanaId: movement.semanaId,
+      productId: movement.productId,
+      productName: movement.productName,
+      unidades: movement.unidades,
+      kilogramos: movement.kilogramos,
+    })),
+    stockPeriodIds: Array.from(new Set(generatedStock.map((movement: StockMovement) => movement.semanaId))),
+    auditId: `audit_legacy_sale_cancel_${item.operationId}`,
+  };
+  return { ...item, status: 'COMPLETED', payload: migratedPayload };
+}
+
+async function resumeSaleCancellation(item: SyncQueueItem): Promise<VirtualBoletaCancellationResult> {
+  let currentItem = item;
+  if (!isDurableCancellationPayload(currentItem.payload)) {
+    // Las operaciones de la versión anterior se encolaban al final del flujo,
+    // por lo que ya representaban una anulación aplicada. Se cierran sin
+    // reprocesar stock ni crear una segunda auditoría.
+    currentItem = completeLegacyCancellationOperation(currentItem);
+    await idbSaveQueueItemStrict(currentItem);
+    return getCancellationResult(currentItem, 'ANULADA', 'Anulación histórica migrada a operación durable.');
+  }
+  const payload = currentItem.payload;
+
+  try {
+    if (payload.stage === 'OPERATION_CREATED') {
+      const boletas = getStoredVirtualBoletas();
+      const boletaIndex = boletas.findIndex((boleta) => boleta.id === payload.boletaVirtualId);
+      if (boletaIndex === -1) throw new Error('No se encontró la Boleta Virtual de la anulación pendiente.');
+
+      const boleta = boletas[boletaIndex];
+      boletas[boletaIndex] = {
+        ...boleta,
+        isAnulado: true,
+        anuladoPor: payload.usuario,
+        anuladoRol: payload.rol,
+        anuladoAt: boleta.anuladoAt || payload.createdAtLocal,
+        motivoAnulacion: payload.motivo,
+        estadoAnulacion: 'ANULACION_EN_PROCESO',
+        anulacionOperationId: currentItem.operationId,
+      };
+      saveVirtualBoletas(boletas);
+      await idbSaveEntityStrict('boletas', boletas[boletaIndex]);
+
+      // El estado transitorio evita que los movimientos vinculados aparezcan
+      // como ventas activas antes de alcanzar su etapa de anulación definitiva.
+      const movements = getStoredMovements();
+      const movementIds = new Set(payload.movementIds);
+      const movementsInProcess: Movement[] = [];
+      movements.forEach((movement, index) => {
+        if (!movementIds.has(movement.id) || movement.isAnulado || movement.anulacionEnProceso) return;
+        movements[index] = {
+          ...movement,
+          anulacionEnProceso: true,
+          anulacionOperationId: currentItem.operationId,
+        };
+        movementsInProcess.push(movements[index]);
+      });
+      saveMovements(movements);
+      await Promise.all(
+        movements
+          .filter((movement) => movementIds.has(movement.id))
+          .map((movement) => idbSaveEntityStrict('movements', movement))
+      );
+
+      currentItem = await persistCancellationStage(currentItem, 'BOLETA_MARKED_CANCELLED');
+      throwIfCancellationFailureWasRequested('BOLETA_MARKED_CANCELLED');
+    }
+
+    if ((currentItem.payload as AtomicSaleCancellationPayload).stage === 'BOLETA_MARKED_CANCELLED') {
+      const movements = getStoredMovements();
+      const movementIds = new Set(payload.movementIds);
+      const updatedMovements: Movement[] = [];
+
+      movements.forEach((movement, index) => {
+        if (!movementIds.has(movement.id) || movement.isAnulado) return;
+        movements[index] = {
+          ...movement,
+          isAnulado: true,
+          anuladoPor: payload.usuario,
+          anuladoRol: payload.rol,
+          anuladoAt: payload.createdAtLocal,
+          motivoAnulacion: payload.motivo,
+          anulacionEnProceso: false,
+          anulacionOperationId: currentItem.operationId,
+        };
+        updatedMovements.push(movements[index]);
+      });
+      saveMovements(movements);
+      await Promise.all(
+        movements
+          .filter((movement) => movementIds.has(movement.id))
+          .map((movement) => idbSaveEntityStrict('movements', movement))
+      );
+      currentItem = await persistCancellationStage(currentItem, 'MOVEMENTS_MARKED_CANCELLED');
+      throwIfCancellationFailureWasRequested('MOVEMENTS_MARKED_CANCELLED');
+    }
+
+    if ((currentItem.payload as AtomicSaleCancellationPayload).stage === 'MOVEMENTS_MARKED_CANCELLED') {
+      const boleta = getStoredVirtualBoletas().find((current) => current.id === payload.boletaVirtualId);
+      if (!boleta) throw new Error('No se encontró la Boleta Virtual para restaurar su stock.');
+
+      const stockMovements = getStoredStockMovements();
+      const stockDisponible = new Map<string, { unidades: number; kilogramos: number }>();
+      const restoredMovements: StockMovement[] = [];
+
+      for (const restore of payload.stockRestorations) {
+        const existingRestoration = stockMovements.find((movement) => movement.id === restore.restorationMovementId);
+        if (existingRestoration) {
+          await idbSaveEntityStrict('stockMovements', existingRestoration);
+          continue;
+        }
+
+        const key = `${restore.semanaId}:${restore.productId}`;
+        let disponible = stockDisponible.get(key);
+        if (!disponible) {
+          const summary = getStockSummaryForPeriod(restore.semanaId).find(
+            (productSummary) => productSummary.product.id === restore.productId
+          );
+          disponible = {
+            unidades: summary ? summary.unidadesDisponibles : 0,
+            kilogramos: summary ? summary.kilogramosDisponibles : 0,
+          };
+        }
+
+        const restorationMovement: StockMovement = {
+          id: restore.restorationMovementId,
+          semanaId: restore.semanaId,
+          productId: restore.productId,
+          productName: restore.productName,
+          tipo: 'ANULACION',
+          direccion: 'ENTRADA',
+          unidades: restore.unidades,
+          kilogramos: restore.kilogramos,
+          referenciaOrigenId: boleta.id,
+          customerId: boleta.customerId,
+          customerName: boleta.customerName,
+          branchId: boleta.branchId,
+          usuario: payload.usuario,
+          fechaHora: payload.createdAtLocal,
+          motivo: `Restauración por Anulación de Boleta #${boleta.numeroBoleta}: ${payload.motivo}`,
+          sincronizado: true,
+          saldoPosteriorUnidades: disponible.unidades + restore.unidades,
+          saldoPosteriorKilogramos: disponible.kilogramos + restore.kilogramos,
+        };
+        stockMovements.push(restorationMovement);
+        restoredMovements.push(restorationMovement);
+        stockDisponible.set(key, {
+          unidades: restorationMovement.saldoPosteriorUnidades,
+          kilogramos: restorationMovement.saldoPosteriorKilogramos,
+        });
+
+        // Punto de recuperación granular: un cierre a mitad del lote conserva este ID determinístico.
+        saveStockMovements(stockMovements);
+        await idbSaveEntityStrict('stockMovements', restorationMovement);
+        if (cancellationStockRestoreFailureAfterForTesting !== null) {
+          cancellationStockRestoreFailureAfterForTesting -= 1;
+          if (cancellationStockRestoreFailureAfterForTesting <= 0) {
+            cancellationStockRestoreFailureAfterForTesting = null;
+            throw new Error('Fallo técnico simulado durante la restauración parcial de stock');
+          }
+        }
+      }
+
+      if (boleta.branchId) {
+        const customers = getStoredCustomers();
+        const customerIndex = customers.findIndex((customer) => customer.id === boleta.customerId);
+        const branchIndex = customers[customerIndex]?.sucursales?.findIndex((branch) => branch.id === boleta.branchId) ?? -1;
+        if (customerIndex !== -1 && branchIndex !== -1 && customers[customerIndex].sucursales) {
+          const branch = customers[customerIndex].sucursales![branchIndex];
+          const processedOperations = branch.anulacionOperationIds || [];
+          if (!processedOperations.includes(currentItem.operationId)) {
+            customers[customerIndex].sucursales![branchIndex] = {
+              ...branch,
+              saldoActual: branch.saldoActual - (boleta.total - boleta.totalPagado),
+              anulacionOperationIds: [...processedOperations, currentItem.operationId],
+            };
+            saveCustomers(customers);
+          }
+          await idbSaveEntityStrict('customers', customers[customerIndex]);
+        }
+      }
+
+      currentItem = await persistCancellationStage(currentItem, 'STOCK_RESTORED');
+      throwIfCancellationFailureWasRequested('STOCK_RESTORED');
+    }
+
+    if ((currentItem.payload as AtomicSaleCancellationPayload).stage === 'STOCK_RESTORED') {
+      const boleta = getStoredVirtualBoletas().find((current) => current.id === payload.boletaVirtualId);
+      if (!boleta) throw new Error('No se encontró la Boleta Virtual para registrar la auditoría.');
+
+      recordAuditLog({
+        id: payload.auditId,
+        usuario: payload.usuario,
+        username: payload.username,
+        rol: payload.rol,
+        accion: `Anulación de Boleta Virtual #${boleta.numeroBoleta}`,
+        tipoAccion: 'ANULACION',
+        customerId: boleta.customerId,
+        customerName: boleta.customerName,
+        detalles: `Motivo: ${payload.motivo}. Movimientos contables anulados: ${payload.movementIds.length}. Movimientos de stock restaurados: ${payload.stockRestorations.length}.`,
+      });
+      currentItem = await persistCancellationStage(currentItem, 'AUDIT_RECORDED');
+      throwIfCancellationFailureWasRequested('AUDIT_RECORDED');
+    }
+
+    if ((currentItem.payload as AtomicSaleCancellationPayload).stage === 'AUDIT_RECORDED') {
+      const boletas = getStoredVirtualBoletas();
+      const boletaIndex = boletas.findIndex((boleta) => boleta.id === payload.boletaVirtualId);
+      if (boletaIndex === -1) throw new Error('No se encontró la Boleta Virtual para completar la anulación.');
+      boletas[boletaIndex] = { ...boletas[boletaIndex], estadoAnulacion: 'COMPLETADA' };
+      saveVirtualBoletas(boletas);
+      await idbSaveEntityStrict('boletas', boletas[boletaIndex]);
+      currentItem = await persistCancellationStage(currentItem, 'COMPLETED');
+    }
+
+    return getCancellationResult(
+      currentItem,
+      'ANULADA',
+      'Venta anulada correctamente. La operación durable quedó completada.'
+    );
+  } catch (error: any) {
+    const message = error?.message || 'No se pudo completar la anulación pendiente.';
+    if (isDurableCancellationPayload(currentItem.payload)) {
+      await persistCancellationStage(currentItem, currentItem.payload.stage, message).catch(() => {});
+    } else {
+      await idbSaveQueueItemStrict({
+        ...currentItem,
+        status: 'ERROR',
+        payload: { ...(currentItem.payload || {}), lastError: message },
+      }).catch(() => {});
+    }
+    throw new Error(message);
+  }
+}
+
+function resumeSaleCancellationWithLock(item: SyncQueueItem): Promise<VirtualBoletaCancellationResult> {
+  const active = activeCancellationResumes.get(item.operationId);
+  if (active) return active;
+
+  const lockToken = acquireCancellationLock(item.operationId);
+  if (!lockToken) {
+    return Promise.resolve(
+      getCancellationResult(item, 'EN_PROCESO', 'Otra pestaña está completando esta anulación.')
+    );
+  }
+
+  const task = resumeSaleCancellation(item).finally(() => {
+    activeCancellationResumes.delete(item.operationId);
+    releaseCancellationLock(item.operationId, lockToken);
+  });
+  activeCancellationResumes.set(item.operationId, task);
+  return task;
+}
+
+export async function resumeVirtualBoletaCancellation(operationId: string): Promise<VirtualBoletaCancellationResult> {
+  const pendingItems = await idbGetIncompleteSaleCancellationItems();
+  const item = pendingItems.find((candidate) => candidate.operationId === operationId);
+  if (!item) {
+    const completed = (await idbGetAllQueueItems()).find(
+      (candidate) => candidate.operationId === operationId && candidate.status === 'COMPLETED'
+    );
+    if (completed) return getCancellationResult(completed, 'ANULADA', 'La anulación ya estaba completada.');
+    throw new Error('No se encontró una anulación pendiente para recuperar.');
+  }
+  return resumeSaleCancellationWithLock(item);
+}
+
+export async function recoverPendingVirtualBoletaCancellations(): Promise<{
+  recoveredCount: number;
+  pendingCount: number;
+  errors: string[];
+}> {
+  const pendingItems = await idbGetIncompleteSaleCancellationItems();
+  let recoveredCount = 0;
+  const errors: string[] = [];
+
+  for (const item of pendingItems) {
+    try {
+      const result = await resumeSaleCancellationWithLock(item);
+      if (result.status === 'ANULADA') recoveredCount++;
+    } catch (error: any) {
+      errors.push(error?.message || 'No se pudo recuperar una anulación pendiente.');
+    }
+  }
+
+  return { recoveredCount, pendingCount: pendingItems.length, errors };
+}
+
+// Crea primero la operación durable y recién después modifica los datos de la venta.
+export async function anularVirtualBoleta(params: {
   boletaId: string;
   usuario: string;
+  username?: string;
+  rol?: UserRole;
   motivo: string;
-}): boolean {
+}): Promise<VirtualBoletaCancellationResult> {
+  const existingOperations = await idbGetIncompleteSaleCancellationItems();
+  const existingOperation = existingOperations.find(
+    (item) =>
+      (item.payload as AtomicSaleCancellationPayload).boletaVirtualId === params.boletaId ||
+      item.entityId === params.boletaId
+  );
+  if (existingOperation) {
+    try {
+      return await resumeSaleCancellationWithLock(existingOperation);
+    } catch (error: any) {
+      return getCancellationResult(
+        existingOperation,
+        'EN_PROCESO',
+        error?.message || 'La anulación sigue pendiente de recuperación.'
+      );
+    }
+  }
+
   const virtualBoletas = getStoredVirtualBoletas();
   const boletaIndex = virtualBoletas.findIndex((b) => b.id === params.boletaId);
-  if (boletaIndex === -1) return false;
+  if (boletaIndex === -1) {
+    return {
+      status: 'NO_ENCONTRADA',
+      message: 'No se encontró la Boleta Virtual solicitada.',
+      movimientosAnulados: [],
+      movimientosStockGenerados: [],
+    };
+  }
 
   const boleta = virtualBoletas[boletaIndex];
-  if (boleta.isAnulado) return true;
+  if (boleta.isAnulado) {
+    return {
+      status: 'YA_ANULADA',
+      message: 'Esta boleta ya se encuentra anulada.',
+      boleta,
+      movimientosAnulados: [],
+      movimientosStockGenerados: [],
+    };
+  }
 
   const nowIso = new Date().toISOString();
-
-  // Mark Boleta as anulada
-  virtualBoletas[boletaIndex].isAnulado = true;
-  virtualBoletas[boletaIndex].anuladoPor = params.usuario;
-  virtualBoletas[boletaIndex].anuladoAt = nowIso;
-  virtualBoletas[boletaIndex].motivoAnulacion = params.motivo;
-  saveVirtualBoletas(virtualBoletas);
-
-  // Anular associated Cuenta Corriente Movements
-  const movements = getStoredMovements();
-  movements.forEach((m) => {
-    if (m.boletaVirtualId === boleta.id || m.numeroBoleta === boleta.numeroBoleta) {
-      m.isAnulado = true;
-      m.anuladoPor = params.usuario;
-      m.anuladoAt = nowIso;
-      m.motivoAnulacion = params.motivo;
-    }
-  });
-  saveMovements(movements);
-
-  // Restore Stock by generating inverse stock movements (ANULACION, ENTRADA)
-  const period = getActiveStockPeriod();
-  const stockMovements = getStoredStockMovements();
-  const summary = getStockSummaryForPeriod(period.id);
-
-  boleta.items.forEach((item) => {
-    const prodSummary = summary.find((s) => s.product.id === item.productId);
-    const prevU = prodSummary ? prodSummary.unidadesDisponibles : 0;
-    const prevKg = prodSummary ? prodSummary.kilogramosDisponibles : 0;
-
-    const sm: StockMovement = {
-      id: `sm_anul_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      semanaId: period.id,
-      productId: item.productId,
-      productName: item.productName,
-      tipo: 'ANULACION',
-      direccion: 'ENTRADA',
-      unidades: item.unidades,
-      kilogramos: item.kilajeReal,
-      referenciaOrigenId: boleta.id,
-      customerId: boleta.customerId,
-      customerName: boleta.customerName,
-      branchId: boleta.branchId,
-      usuario: params.usuario,
-      fechaHora: nowIso,
-      motivo: `Restauración por Anulación de Boleta #${boleta.numeroBoleta}: ${params.motivo}`,
-      sincronizado: true,
-      saldoPosteriorUnidades: prevU + item.unidades,
-      saldoPosteriorKilogramos: prevKg + item.kilajeReal,
-    };
-    stockMovements.push(sm);
-  });
-
-  saveStockMovements(stockMovements);
-
-  recordAuditLog({
+  // Una misma boleta sólo puede tener una anulación integral: el ID estable
+  // evita que dos pestañas creen operaciones concurrentes distintas.
+  const operationId = `sale_cancel_${boleta.id}`;
+  const deviceId = getDeviceId();
+  const payload: AtomicSaleCancellationPayload = {
+    boletaVirtualId: boleta.id,
+    motivo: params.motivo,
     usuario: params.usuario,
-    accion: `Anulación de Boleta Virtual #${boleta.numeroBoleta}`,
-    tipoAccion: 'ANULACION',
-    customerId: boleta.customerId,
-    customerName: boleta.customerName,
-    detalles: `Motivo: ${params.motivo}. Stock restaurado.`,
-  });
+    username: params.username,
+    rol: params.rol,
+    deviceId,
+    createdAtLocal: nowIso,
+    stage: 'OPERATION_CREATED',
+    completedStages: ['OPERATION_CREATED'],
+    movementIds: getStoredMovements()
+      .filter((movement) => movement.boletaVirtualId === boleta.id)
+      .map((movement) => movement.id),
+    stockRestorations: buildCancellationStockRestorations(operationId, boleta),
+    stockPeriodIds: Array.from(new Set(buildCancellationStockRestorations(operationId, boleta).map((restore) => restore.semanaId))),
+    auditId: `audit_sale_cancel_${operationId}`,
+  };
+  const operation: SyncQueueItem = {
+    operationId,
+    entityType: 'ATOMIC_SALE_CANCELLATION',
+    entityId: boleta.id,
+    action: 'ATOMIC_TRANSACTION',
+    payload,
+    createdAt: nowIso,
+    createdBy: params.usuario,
+    deviceId,
+    retryCount: 0,
+    status: 'PENDING',
+  };
 
-  return true;
+  // Este await es la barrera de durabilidad: sin operación en IndexedDB no se toca la venta.
+  await idbSaveQueueItemStrict(operation);
+  return resumeSaleCancellationWithLock(operation);
 }
 
 // Stock Adjustment / Merma Registration

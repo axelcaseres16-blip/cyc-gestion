@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { Movement, AppUser } from '../types';
 import { anularMovement } from '../utils/storage';
+import { anularVirtualBoleta, getStoredVirtualBoletas } from '../utils/stockAndBoletasManager';
 import { formatCurrency, formatDate } from '../utils/formatters';
 
 interface AnulacionModalProps {
@@ -27,7 +28,12 @@ export const AnulacionModal: React.FC<AnulacionModalProps> = ({
 
   if (!isOpen || !movement) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const virtualBoleta = movement.boletaVirtualId
+    ? getStoredVirtualBoletas().find((boleta) => boleta.id === movement.boletaVirtualId)
+    : undefined;
+  const isVirtualMovement = Boolean(movement.boletaVirtualId);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!motivo.trim()) {
       setError('Por favor ingrese el motivo detallado de la anulación.');
@@ -37,7 +43,33 @@ export const AnulacionModal: React.FC<AnulacionModalProps> = ({
     try {
       setIsSubmitting(true);
       setError(null);
-      anularMovement(movement.id, currentUser, motivo.trim());
+      if (isVirtualMovement) {
+        if (!virtualBoleta) {
+          setError('No se encontró la Boleta Virtual vinculada. La operación no fue anulada.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const result = await anularVirtualBoleta({
+          boletaId: virtualBoleta.id,
+          usuario: `${currentUser.nombre} (${currentUser.role})`,
+          username: currentUser.username,
+          rol: currentUser.role,
+          motivo: motivo.trim(),
+        });
+        if (result.status !== 'ANULADA') {
+          setError(result.message);
+          setIsSubmitting(false);
+          return;
+        }
+      } else {
+        const result = anularMovement(movement.id, currentUser, motivo.trim());
+        if (result.status !== 'ANULADO') {
+          setError(result.message);
+          setIsSubmitting(false);
+          return;
+        }
+      }
       setIsSubmitting(false);
       onSuccess();
       onClose();
@@ -57,8 +89,12 @@ export const AnulacionModal: React.FC<AnulacionModalProps> = ({
               <ShieldAlert size={22} />
             </div>
             <div>
-              <h3 className="text-lg font-black text-white">Anulación de Movimiento</h3>
-              <p className="text-xs text-slate-400">Proceso inmutable de seguridad contable</p>
+              <h3 className="text-lg font-black text-white">
+                {isVirtualMovement ? 'Anular venta completa' : 'Anulación de Movimiento'}
+              </h3>
+              <p className="text-xs text-slate-400">
+                {isVirtualMovement ? 'Proceso integral de cuenta corriente y stock' : 'Proceso inmutable de seguridad contable'}
+              </p>
             </div>
           </div>
           <button
@@ -100,13 +136,41 @@ export const AnulacionModal: React.FC<AnulacionModalProps> = ({
             </div>
           </div>
 
+          {isVirtualMovement && virtualBoleta && (
+            <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200 text-xs text-slate-800 space-y-2">
+              <p className="font-black text-blue-950 uppercase tracking-wide">Venta virtual vinculada</p>
+              <p className="text-blue-900 font-semibold">
+                Este movimiento pertenece a una Boleta Virtual. Debe anularse la venta completa para mantener correctamente la cuenta corriente y el stock.
+              </p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                <span><strong>Número:</strong> {virtualBoleta.numeroBoleta}</span>
+                <span><strong>Fecha:</strong> {formatDate(virtualBoleta.fechaHora, true)}</span>
+                <span><strong>Total:</strong> {formatCurrency(virtualBoleta.total)}</span>
+                <span><strong>Pagado:</strong> {formatCurrency(virtualBoleta.totalPagado)}</span>
+                <span className="col-span-2"><strong>Creada por:</strong> {virtualBoleta.registradoPor}</span>
+              </div>
+              <div className="border-t border-blue-200 pt-2">
+                <strong>Productos:</strong>
+                <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                  {virtualBoleta.items.map((item) => (
+                    <li key={item.id}>{item.productName}: {item.unidades} u / {item.kilajeReal} kg</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
           <div className="bg-amber-50 p-3.5 rounded-2xl border border-amber-200 text-amber-900 text-xs space-y-1 font-medium">
             <div className="font-bold flex items-center space-x-1.5 text-amber-950">
               <AlertTriangle size={14} className="text-amber-600" />
               <span>Garantía de Inmutabilidad de Datos:</span>
             </div>
             <p className="text-[11px] leading-relaxed">
-              Los registros históricos nunca se eliminan. Al confirmar, este movimiento se marcará como <strong>ANULADO</strong>, se generará un ajuste inverso compensatorio en la cuenta corriente y se registrará un evento inalterable en el Panel de Auditoría a nombre de <strong>{currentUser.nombre} ({currentUser.role})</strong>.
+              {isVirtualMovement ? (
+                <>Esta operación también restaurará el stock y anulará los pagos asociados. La Boleta Virtual y sus documentos se conservarán como historial, pero todos sus movimientos quedarán excluidos del saldo.</>
+              ) : (
+                <>Los registros históricos nunca se eliminan. Al confirmar, este movimiento se marcará como <strong>ANULADO</strong>, quedará excluido del saldo y se registrará un evento en el Panel de Auditoría a nombre de <strong>{currentUser.nombre} ({currentUser.role})</strong>.</>
+              )}
             </p>
           </div>
 
@@ -139,7 +203,7 @@ export const AnulacionModal: React.FC<AnulacionModalProps> = ({
               disabled={isSubmitting}
               className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
             >
-              {isSubmitting ? 'Anulando...' : 'Confirmar Anulación Contable'}
+              {isSubmitting ? 'Anulando...' : isVirtualMovement ? 'Confirmar Anulación Integral' : 'Confirmar Anulación Contable'}
             </button>
           </div>
         </form>

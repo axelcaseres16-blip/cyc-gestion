@@ -1058,13 +1058,19 @@ export function addMovement(
 
 /**
  * ANULACIÓN SEGURA E INMUTABLE
- * Nunca elimina un movimiento histórico. Genera un movimiento inverso y registra auditoría.
+ * Nunca elimina un movimiento histórico. Lo marca anulado y registra auditoría.
  */
+export interface MovementCancellationResult {
+  status: 'ANULADO' | 'YA_ANULADO' | 'REQUIERE_ANULACION_BOLETA_VIRTUAL';
+  message: string;
+  movement?: Movement;
+}
+
 export function anularMovement(
   movementId: string,
   user: AppUser,
   motivo: string
-): Movement {
+): MovementCancellationResult {
   const movements = getStoredMovements();
   const index = movements.findIndex((m) => m.id === movementId);
 
@@ -1074,7 +1080,20 @@ export function anularMovement(
 
   const target = movements[index];
   if (target.isAnulado) {
-    throw new Error('El movimiento ya se encuentra anulado.');
+    return {
+      status: 'YA_ANULADO',
+      message: 'Este movimiento ya se encuentra anulado.',
+      movement: target,
+    };
+  }
+
+  if (target.boletaVirtualId) {
+    return {
+      status: 'REQUIERE_ANULACION_BOLETA_VIRTUAL',
+      message:
+        'Este movimiento pertenece a una Boleta Virtual. Debe anularse la venta completa para mantener correctamente la cuenta corriente y el stock.',
+      movement: target,
+    };
   }
 
   const nowIso = new Date().toISOString();
@@ -1084,31 +1103,20 @@ export function anularMovement(
     ...target,
     isAnulado: true,
     anuladoPor: `${user.nombre} (${user.role})`,
+    anuladoRol: user.role,
     anuladoAt: nowIso,
     motivoAnulacion: motivo,
   };
 
-  // 2. Crear movimiento inverso compensatorio
-  const reversalMov: Movement = {
-    id: 'mov_rev_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-    customerId: target.customerId,
-    tipo: 'AJUSTE',
-    fecha: nowIso,
-    monto: target.monto,
-    esDebito: !target.esDebito, // Invertir efecto contable
-    descripcion: `ANULACIÓN REVERTIDA: ${target.tipo} (${target.numeroBoleta || 'S/N'}). Motivo: ${motivo}`,
-    registradoPor: `${user.nombre} (${user.role})`,
-    createdAt: nowIso,
-  };
-
-  movements.unshift(reversalMov);
   saveMovements(movements);
 
   const customers = getStoredCustomers();
   const cust = customers.find((c) => c.id === target.customerId);
   const custName = cust ? cust.alias || cust.nombre : 'Cliente';
 
-  // 3. Registrar en Auditoría e Historial
+  const isLegacyBoleta = target.tipo === 'BOLETA';
+
+  // El original queda anulado y excluido del saldo; no se crea una reversión.
   addActivityLog(
     user.nombre,
     `ANULÓ el movimiento N° ${target.numeroBoleta || target.id} de ${custName}`,
@@ -1127,12 +1135,16 @@ export function anularMovement(
     customerId: target.customerId,
     customerName: custName,
     resultado: 'EXITO',
-    detalles: `Reversión contable generada. Motivo: ${motivo}`,
+    detalles: `${isLegacyBoleta ? 'Boleta heredada sin stock asociado. ' : ''}Movimiento excluido del saldo sin crear reversión contable. Motivo: ${motivo}`,
   });
 
   autoSaveSnapshot();
 
-  return reversalMov;
+  return {
+    status: 'ANULADO',
+    message: 'Movimiento anulado correctamente. Fue excluido del saldo sin generar un ajuste inverso.',
+    movement: movements[index],
+  };
 }
 
 export function addVisit(

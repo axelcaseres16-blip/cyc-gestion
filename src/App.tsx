@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CustomerWithBalance, Movement, Customer, CustomerVisit, WhatsAppTemplates, AppUser } from './types';
 import { AlertCircle } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -51,6 +51,7 @@ import { OfflineSyncModal } from './components/OfflineSyncModal';
 
 import { initConnectivitySyncListeners, runFullSyncProcess } from './utils/syncEngine';
 import { idbGetPendingQueueItems } from './utils/indexedDBEngine';
+import { recoverPendingVirtualBoletaCancellations } from './utils/stockAndBoletasManager';
 import { PendingSaleRecoveryModal } from './components/PendingSaleRecoveryModal';
 import { VirtualBoletaModal } from './components/VirtualBoletaModal';
 import {
@@ -98,18 +99,37 @@ export default function App() {
   const [pendingSaleToRecover, setPendingSaleToRecover] = useState<PendingCompletedSale | null>(null);
   const [recoveredBoletaModalData, setRecoveredBoletaModalData] = useState<PendingCompletedSale | null>(null);
   const [startupRecoveryBanner, setStartupRecoveryBanner] = useState<string | null>(null);
+  const startupRecoveryStartedRef = useRef(false);
 
   // Inicialización de escuchadores offline/online y verificación de cola en IndexedDB al arrancar
   useEffect(() => {
+    if (startupRecoveryStartedRef.current) return;
+    startupRecoveryStartedRef.current = true;
     initConnectivitySyncListeners();
 
-    idbGetPendingQueueItems().then((pending) => {
-      if (pending && pending.length > 0) {
-        setStartupRecoveryBanner(
-          `⚡ Se recuperaron ${pending.length} operación(es) pendiente(s) guardadas localmente en este dispositivo.`
+    const recoverStartupOperations = async () => {
+      const cancellationRecovery = await recoverPendingVirtualBoletaCancellations();
+      const pending = await idbGetPendingQueueItems();
+      const messages: string[] = [];
+
+      if (cancellationRecovery.pendingCount > 0) {
+        messages.push(
+          cancellationRecovery.errors.length > 0
+            ? 'Se encontró una anulación pendiente de completar. Se reintentará al volver a iniciar.'
+            : `Se recuperó ${cancellationRecovery.recoveredCount} anulación(es) pendiente(s) de completar.`
         );
-        runFullSyncProcess().catch(() => {});
       }
+      if (pending.length > 0) {
+        messages.push(`Se recuperaron ${pending.length} operación(es) offline pendientes.`);
+      }
+      if (messages.length > 0) setStartupRecoveryBanner(`⚡ ${messages.join(' ')}`);
+
+      refreshData();
+      runFullSyncProcess().catch(() => {});
+    };
+
+    recoverStartupOperations().catch(() => {
+      setStartupRecoveryBanner('⚡ Se encontró una operación pendiente de recuperación.');
     });
   }, []);
 

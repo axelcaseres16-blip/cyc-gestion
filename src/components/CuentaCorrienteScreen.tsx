@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Movement, CustomerWithBalance } from '../types';
 import { formatDate, formatCurrency } from '../utils/formatters';
+import { isMovementFinanciallyActive } from '../utils/movementFinancialState';
 import { Receipt, Search, Filter, Download, FileText, ArrowUpRight, ArrowDownLeft, SlidersHorizontal, Camera } from 'lucide-react';
 
 interface CuentaCorrienteScreenProps {
@@ -10,6 +11,38 @@ interface CuentaCorrienteScreenProps {
   onViewImage: (imageUrl: string, title: string) => void;
   currentUserRole?: string;
   onOpenAnularModal?: (mov: Movement) => void;
+}
+
+export function buildCuentaCorrienteCsv(movements: Movement[], customers: CustomerWithBalance[]): string {
+  const escapeCsv = (value: string | number | undefined) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  let csv = 'ID,Fecha,Cliente,Tipo,NumeroBoleta,Debito_Suma,Credito_Resta,MetodoPago,RegistradoPor,Descripcion,Estado,FechaAnulacion,MotivoAnulacion,UsuarioAnulo\n';
+
+  movements.forEach((m) => {
+    const cust = customers.find((c) => c.id === m.customerId);
+    const nombreCliente = cust ? cust.alias || cust.nombre : 'Desconocido';
+    const debito = m.esDebito ? m.monto : 0;
+    const credito = !m.esDebito ? m.monto : 0;
+    const estado = m.anulacionEnProceso ? 'Anulación en proceso' : m.isAnulado ? 'Anulado' : 'Activo';
+
+    csv += [
+      m.id,
+      formatDate(m.fecha, true),
+      nombreCliente,
+      m.tipo,
+      m.numeroBoleta,
+      debito,
+      credito,
+      m.metodoPago,
+      m.registradoPor,
+      m.descripcion,
+      estado,
+      m.anuladoAt ? formatDate(m.anuladoAt, true) : '',
+      m.motivoAnulacion,
+      m.anuladoPor,
+    ].map(escapeCsv).join(',') + '\n';
+  });
+
+  return csv;
 }
 
 export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
@@ -39,26 +72,19 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
     return matchesSearch && matchesTipo && matchesCust;
   });
 
-  const totalDebitosSum = filteredMovements
+  const activeFilteredMovements = filteredMovements.filter(isMovementFinanciallyActive);
+
+  const totalDebitosSum = activeFilteredMovements
     .filter((m) => m.esDebito)
     .reduce((acc, m) => acc + m.monto, 0);
 
-  const totalCreditosSum = filteredMovements
+  const totalCreditosSum = activeFilteredMovements
     .filter((m) => !m.esDebito)
     .reduce((acc, m) => acc + m.monto, 0);
 
   // Función para exportar a CSV
   const handleExportCSV = () => {
-    let csv = 'ID,Fecha,Cliente,Tipo,NumeroBoleta,Debito_Suma,Credito_Resta,MetodoPago,RegistradoPor,Descripcion\n';
-
-    filteredMovements.forEach((m) => {
-      const cust = customers.find((c) => c.id === m.customerId);
-      const nombreCliente = cust ? `"${cust.alias || cust.nombre}"` : 'Desconocido';
-      const debito = m.esDebito ? m.monto : 0;
-      const credito = !m.esDebito ? m.monto : 0;
-
-      csv += `${m.id},"${formatDate(m.fecha, true)}",${nombreCliente},${m.tipo},"${m.numeroBoleta || ''}",${debito},${credito},"${m.metodoPago || ''}","${m.registradoPor}","${m.descripcion.replace(/"/g, '""')}"\n`;
-    });
+    const csv = buildCuentaCorrienteCsv(filteredMovements, customers);
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -173,7 +199,7 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
               <div
                 key={mov.id}
                 className={`p-4 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-3 ${
-                  mov.isAnulado ? 'bg-red-50/40 opacity-75' : ''
+                  mov.isAnulado ? 'bg-red-50/40 opacity-75' : mov.anulacionEnProceso ? 'bg-amber-50/50 opacity-75' : ''
                 }`}
               >
                 <div className="flex items-start space-x-3">
@@ -181,6 +207,8 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
                     className={`p-2.5 rounded-xl text-xs font-bold shrink-0 mt-0.5 ${
                       mov.isAnulado
                         ? 'bg-slate-200 text-slate-500 line-through'
+                        : mov.anulacionEnProceso
+                        ? 'bg-amber-100 text-amber-700'
                         : isDebito
                         ? 'bg-red-100 text-red-700'
                         : 'bg-emerald-100 text-emerald-700'
@@ -203,6 +231,11 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
                       {mov.isAnulado && (
                         <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-red-600 text-white shadow-2xs">
                           🚨 ANULADO
+                        </span>
+                      )}
+                      {mov.anulacionEnProceso && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 shadow-2xs">
+                          ANULACIÓN EN PROCESO
                         </span>
                       )}
                       <span className="text-xs text-slate-500">{formatDate(mov.fecha, true)}</span>
@@ -235,7 +268,7 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
                     </button>
                   )}
 
-                  {!mov.isAnulado && currentUserRole !== 'REPARTIDOR' && onOpenAnularModal && (
+                  {!mov.isAnulado && !mov.anulacionEnProceso && currentUserRole !== 'REPARTIDOR' && onOpenAnularModal && (
                     <button
                       onClick={() => onOpenAnularModal(mov)}
                       className="text-[11px] font-extrabold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 px-2.5 py-1.5 rounded-lg transition active:scale-95 cursor-pointer"

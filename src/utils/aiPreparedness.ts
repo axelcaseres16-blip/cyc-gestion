@@ -1,4 +1,5 @@
 import { CustomerWithBalance, Movement, CustomerVisit } from '../types';
+import { isMovementFinanciallyActive } from './movementFinancialState';
 
 export interface AIPredictiveCustomerVector {
   customerId: string;
@@ -35,7 +36,7 @@ export function buildAIPredictiveDataset(
 ): AIPredictiveDatasetSummary {
   const now = new Date();
   const vectors: AIPredictiveCustomerVector[] = customers.map((c) => {
-    const custMovements = movements.filter((m) => m.customerId === c.id && !m.isAnulado);
+    const custMovements = movements.filter((m) => m.customerId === c.id && isMovementFinanciallyActive(m));
     const boletas = custMovements.filter((m) => m.tipo === 'BOLETA');
     
     // Cálculo valor promedio de pedido

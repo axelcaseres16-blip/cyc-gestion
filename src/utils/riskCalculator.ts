@@ -1,5 +1,6 @@
 import { Customer, Movement, RiskEvaluation, RiskFactor, RiskLevel } from '../types';
 import { getDaysAgo } from './formatters';
+import { isMovementFinanciallyActive } from './movementFinancialState';
 
 /**
  * Algoritmo dinámico de clasificación de riesgo crediticio para C&C Gestión.
@@ -23,7 +24,7 @@ export function calculateCustomerRisk(
 } {
   // Ordenar movimientos por fecha ascendente (excluyendo movimientos anulados)
   const customerMovements = movements
-    .filter((m) => m.customerId === customer.id && !m.isAnulado)
+    .filter((m) => m.customerId === customer.id && isMovementFinanciallyActive(m))
     .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
 
   let saldoActual = 0;

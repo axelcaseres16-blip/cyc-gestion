@@ -27,6 +27,7 @@ import {
   saveVirtualBoletas,
   getStoredStockMovements,
   saveStockMovements,
+  resumeVirtualBoletaCancellation,
 } from './stockAndBoletasManager';
 import { VirtualBoleta, Movement, StockMovement, Customer } from '../types';
 
@@ -203,9 +204,15 @@ export async function runFullSyncProcess(): Promise<{
 
       await idbUpdateQueueStatus(item.operationId, 'SYNCING');
 
-      try {
-        await processSingleQueueItem(item);
-        recordProcessedOperationId(item.operationId);
+        try {
+          await processSingleQueueItem(item);
+          // Las anulaciones integrales se completan por etapas y mantienen su
+          // estado COMPLETED; no se las debe sobrescribir como SYNCED.
+          if (item.entityType === 'ATOMIC_SALE_CANCELLATION') {
+            processedCount++;
+            continue;
+          }
+          recordProcessedOperationId(item.operationId);
         await idbUpdateQueueStatus(
           item.operationId,
           'SYNCED',
@@ -244,6 +251,10 @@ async function processSingleQueueItem(item: SyncQueueItem): Promise<void> {
   switch (entityType) {
     case 'ATOMIC_SALE':
       await syncAtomicSalePayload(payload, operationId);
+      break;
+
+    case 'ATOMIC_SALE_CANCELLATION':
+      await resumeVirtualBoletaCancellation(operationId);
       break;
 
     case 'BOLETA':

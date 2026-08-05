@@ -40,6 +40,7 @@ export interface CustomerBranch {
   telefono?: string;
   referenciaUbicacion?: string;
   saldoActual: number;
+  anulacionOperationIds?: string[];
 }
 
 export interface AppUser {
@@ -169,8 +170,11 @@ export interface Movement {
   createdAt: string;
   isAnulado?: boolean;
   anuladoPor?: string;
+  anuladoRol?: UserRole;
   anuladoAt?: string;
   motivoAnulacion?: string;
+  anulacionEnProceso?: boolean;
+  anulacionOperationId?: string;
   movimientoInversoId?: string;
   boletaVirtualId?: string;
 }
@@ -284,8 +288,11 @@ export interface VirtualBoleta {
   sincronizado: boolean;
   isAnulado?: boolean;
   anuladoPor?: string;
+  anuladoRol?: UserRole;
   anuladoAt?: string;
   motivoAnulacion?: string;
+  estadoAnulacion?: 'ANULACION_EN_PROCESO' | 'COMPLETADA';
+  anulacionOperationId?: string;
 }
 
 export type StockPeriodState = 'ABIERTA' | 'CERRADA' | 'EN_REVISION';

@@ -8,6 +8,7 @@ import {
   Movement,
   Customer,
   StockMovement,
+  UserRole,
 } from '../types';
 
 export type SyncOperationStatus =
@@ -17,7 +18,8 @@ export type SyncOperationStatus =
   | 'SYNCED'
   | 'ERROR'
   | 'CONFLICT'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'COMPLETED';
 
 export type EntityType =
   | 'BOLETA'
@@ -27,9 +29,45 @@ export type EntityType =
   | 'IMAGE'
   | 'CUSTOMER_EDIT'
   | 'AUDIT'
-  | 'ATOMIC_SALE';
+  | 'ATOMIC_SALE'
+  | 'ATOMIC_SALE_CANCELLATION';
 
 export type SyncAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'ATOMIC_TRANSACTION';
+
+export type SaleCancellationStage =
+  | 'OPERATION_CREATED'
+  | 'BOLETA_MARKED_CANCELLED'
+  | 'MOVEMENTS_MARKED_CANCELLED'
+  | 'STOCK_RESTORED'
+  | 'AUDIT_RECORDED'
+  | 'COMPLETED';
+
+export interface SaleCancellationStockRestore {
+  sourceStockMovementId?: string;
+  restorationMovementId: string;
+  semanaId: string;
+  productId: string;
+  productName: string;
+  unidades: number;
+  kilogramos: number;
+}
+
+export interface AtomicSaleCancellationPayload {
+  boletaVirtualId: string;
+  motivo: string;
+  usuario: string;
+  username?: string;
+  rol?: UserRole;
+  deviceId: string;
+  createdAtLocal: string;
+  stage: SaleCancellationStage;
+  completedStages: SaleCancellationStage[];
+  movementIds: string[];
+  stockRestorations: SaleCancellationStockRestore[];
+  stockPeriodIds: string[];
+  auditId: string;
+  lastError?: string;
+}
 
 export interface SyncQueueItem {
   operationId: string;
@@ -212,6 +250,22 @@ export async function idbSaveQueueItem(item: SyncQueueItem): Promise<void> {
   }
 }
 
+/**
+ * Versión estricta para operaciones contables: si no logra persistir, no
+ * permite que el llamador continúe con cambios en localStorage.
+ */
+export async function idbSaveQueueItemStrict(item: SyncQueueItem): Promise<void> {
+  const db = await initIndexedDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('syncQueue', 'readwrite');
+    const store = tx.objectStore('syncQueue');
+    const req = store.put(item);
+    req.onerror = () => reject(req.error || new Error('No se pudo persistir la operación'));
+    tx.onabort = () => reject(tx.error || new Error('La transacción IndexedDB fue abortada'));
+    tx.oncomplete = () => resolve();
+  });
+}
+
 export async function idbGetAllQueueItems(): Promise<SyncQueueItem[]> {
   try {
     const db = await initIndexedDB();
@@ -235,6 +289,15 @@ export async function idbGetPendingQueueItems(): Promise<SyncQueueItem[]> {
       item.status === 'LOCAL_SAVED' ||
       item.status === 'PENDING' ||
       item.status === 'ERROR'
+  );
+}
+
+export async function idbGetIncompleteSaleCancellationItems(): Promise<SyncQueueItem[]> {
+  const all = await idbGetAllQueueItems();
+  return all.filter(
+    (item) =>
+      item.entityType === 'ATOMIC_SALE_CANCELLATION' &&
+      item.status !== 'COMPLETED'
   );
 }
 
@@ -442,6 +505,21 @@ export async function idbSaveEntity<T extends { id: string }>(
   } catch (err) {
     console.error(`Error idbSaveEntity in ${storeName}:`, err);
   }
+}
+
+export async function idbSaveEntityStrict<T extends { id: string }>(
+  storeName: 'boletas' | 'movements' | 'customers' | 'stockMovements',
+  entity: T
+): Promise<void> {
+  const db = await initIndexedDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    const req = store.put(entity);
+    req.onerror = () => reject(req.error || new Error(`No se pudo persistir ${storeName}`));
+    tx.onabort = () => reject(tx.error || new Error(`La transacción ${storeName} fue abortada`));
+    tx.oncomplete = () => resolve();
+  });
 }
 
 export async function idbGetAllEntities<T>(

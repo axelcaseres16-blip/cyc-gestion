@@ -52,6 +52,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
   activeViewName = 'boletavirtual',
 }) => {
   const isAnulado = boleta.isAnulado;
+  const isCancellationInProgress = boleta.estadoAnulacion === 'ANULACION_EN_PROCESO';
 
   const [currentPhone, setCurrentPhone] = useState(customerPhone);
   const [phoneResult, setPhoneResult] = useState<NormalizedPhoneResult>(() =>
@@ -215,7 +216,11 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
                 <h3 className="font-extrabold text-base sm:text-lg text-white">
                   Boleta Virtual #{boleta.numeroBoleta}
                 </h3>
-                {isAnulado ? (
+                {isCancellationInProgress ? (
+                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                    ANULACIÓN EN PROCESO
+                  </span>
+                ) : isAnulado ? (
                   <span className="bg-red-500/20 text-red-300 border border-red-500/30 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
                     ANULADA
                   </span>
@@ -338,8 +343,8 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
                 )}
               </div>
               <div className="text-right">
-                <span className={`text-xs font-black uppercase px-3 py-1 rounded-full border ${statusCardColor}`}>
-                  ESTADO: {statusText}
+                <span className={`text-xs font-black uppercase px-3 py-1 rounded-full border ${isCancellationInProgress ? 'bg-amber-50 border-amber-200 text-amber-800' : statusCardColor}`}>
+                  ESTADO: {isCancellationInProgress ? 'ANULACIÓN EN PROCESO' : isAnulado ? 'ANULADA' : statusText}
                 </span>
                 <p className="text-xs text-slate-500 font-medium mt-1">
                   <Calendar className="w-3 h-3 inline mr-1" />

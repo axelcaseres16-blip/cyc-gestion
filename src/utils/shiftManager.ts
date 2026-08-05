@@ -1,4 +1,5 @@
 import { CustomerWithBalance, Movement, CustomerVisit, PendingSale } from '../types';
+import { isMovementFinanciallyActive } from './movementFinancialState';
 
 const SHIFT_START_KEY = 'cyc_gestion_shift_start_v1';
 
@@ -65,7 +66,7 @@ export function calculateShiftStats(
 
   // Movimientos de hoy
   const movementsToday = movements.filter(
-    (m) => !m.isAnulado && m.fecha.startsWith(todayStr)
+    (m) => isMovementFinanciallyActive(m) && m.fecha.startsWith(todayStr)
   );
 
   // Visitas de hoy

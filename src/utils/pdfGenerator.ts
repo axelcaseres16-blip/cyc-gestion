@@ -1,6 +1,7 @@
 import { CustomerWithBalance, Movement, CustomerVisit, AppUser } from '../types';
 import { calculateShiftStats } from './shiftManager';
 import { formatCurrency, formatDate } from './formatters';
+import { isMovementFinanciallyActive } from './movementFinancialState';
 
 export function generateDailySummaryHTML(
   currentUser: AppUser,
@@ -11,8 +12,8 @@ export function generateDailySummaryHTML(
 ): string {
   const stats = calculateShiftStats(customers, movements, visits);
   const todayStr = new Date().toISOString().split('T')[0];
-  const salesToday = movements.filter((m) => !m.isAnulado && m.tipo === 'BOLETA' && m.fecha.startsWith(todayStr));
-  const paymentsToday = movements.filter((m) => !m.isAnulado && m.tipo === 'PAGO' && m.fecha.startsWith(todayStr));
+  const salesToday = movements.filter((m) => isMovementFinanciallyActive(m) && m.tipo === 'BOLETA' && m.fecha.startsWith(todayStr));
+  const paymentsToday = movements.filter((m) => isMovementFinanciallyActive(m) && m.tipo === 'PAGO' && m.fecha.startsWith(todayStr));
 
   return `
   <!DOCTYPE html>

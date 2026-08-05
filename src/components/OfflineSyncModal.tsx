@@ -142,7 +142,7 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
               <p className="text-xs text-slate-300 font-medium">
                 {isActuallyOffline
                   ? '🔴 Modo Sin Conexión Activo (Guardando todo en IndexedDB)'
-                  : '🟢 Conexión a Servidor Estable (Conexión activa)'}
+                  : '🟢 Conexión disponible (cola local activa)'}
               </p>
             </div>
           </div>
@@ -292,7 +292,7 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
                           <td className="p-3">
                             {item.status === 'SYNCED' && (
                               <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[10px]">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Sincronizado
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Procesado localmente
                               </span>
                             )}
                             {item.status === 'LOCAL_SAVED' && (
@@ -322,7 +322,11 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
                           </td>
 
                           <td className="p-3 font-bold text-slate-900">
-                            {item.entityType === 'ATOMIC_SALE' ? '🛍️ Venta Completa' : item.entityType}
+                            {item.entityType === 'ATOMIC_SALE'
+                              ? '🛍️ Venta Completa'
+                              : item.entityType === 'ATOMIC_SALE_CANCELLATION'
+                              ? '↩️ Anulación Integral de Venta'
+                              : item.entityType}
                           </td>
 
                           <td className="p-3 text-slate-700 font-semibold">{item.createdBy || 'Sistema'}</td>
