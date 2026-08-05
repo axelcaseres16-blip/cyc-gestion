@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Movement, CustomerWithBalance } from '../types';
 import { formatDate, formatCurrency } from '../utils/formatters';
-import { getStoredVirtualBoletas } from '../utils/stockAndBoletasManager';
-import { idbGetAllImages } from '../utils/indexedDBEngine';
+import { getPersistedVirtualBoletaImageUrl } from '../utils/virtualBoletaImageStorage';
 import { Camera, Search, Eye, Download, Share2 } from 'lucide-react';
 
 interface BoletaGalleryProps {
@@ -41,41 +40,30 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
   onSelectCustomer,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [virtualBoletaImages, setVirtualBoletaImages] = useState<GalleryBoleta[]>([]);
+  const [persistedImageUrls, setPersistedImageUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let active = true;
     const objectUrls: string[] = [];
 
-    const loadVirtualBoletaImages = async () => {
-      const [boletas, images] = await Promise.all([
-        Promise.resolve(getStoredVirtualBoletas()),
-        idbGetAllImages(),
-      ]);
-      const imagesById = new Map(images.map((image) => [image.imageId, image]));
-      const galleryItems = boletas.flatMap((boleta) => {
-        if (!boleta.imageId) return [];
-        const image = imagesById.get(boleta.imageId);
-        if (!image?.blob) return [];
-        const imageUrl = typeof image.blob === 'string' ? image.blob : URL.createObjectURL(image.blob);
+    const loadPersistedImages = async () => {
+      const imageMovements = movements.filter((movement) => movement.imageId);
+      const resolvedImages = await Promise.all(
+        imageMovements.map(async (movement) => ({
+          imageId: movement.imageId!,
+          imageUrl: await getPersistedVirtualBoletaImageUrl(movement.imageId),
+        }))
+      );
+      const nextImageUrls: Record<string, string> = {};
+      resolvedImages.forEach(({ imageId, imageUrl }) => {
+        if (!imageUrl) return;
+        nextImageUrls[imageId] = imageUrl;
         if (imageUrl.startsWith('blob:')) objectUrls.push(imageUrl);
-        return [{
-          id: boleta.id,
-          imageUrl,
-          customerId: boleta.customerId,
-          numeroBoleta: boleta.numeroBoleta,
-          fecha: boleta.fechaHora,
-          monto: boleta.total,
-          descripcion: `Boleta Virtual ${boleta.isAnulado ? 'anulada' : 'generada'}`,
-          registradoPor: boleta.registradoPor,
-          isVirtual: true,
-          isAnulada: boleta.isAnulado,
-        }];
       });
-      if (active) setVirtualBoletaImages(galleryItems);
+      if (active) setPersistedImageUrls(nextImageUrls);
     };
 
-    loadVirtualBoletaImages();
+    loadPersistedImages();
     return () => {
       active = false;
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -83,24 +71,30 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
   }, [movements]);
 
   const boletaPhotos = useMemo<GalleryBoleta[]>(() => {
-    const physicalBoletas = movements
-      .filter((movement) => movement.fotoUrl?.trim() && !movement.boletaVirtualId)
-      .map((movement) => ({
-        id: movement.id,
-        imageUrl: movement.fotoUrl!,
-        customerId: movement.customerId,
-        numeroBoleta: movement.numeroBoleta,
-        fecha: movement.fecha,
-        monto: movement.monto,
-        descripcion: movement.descripcion,
-        registradoPor: movement.registradoPor,
-        isVirtual: false,
-        isAnulada: movement.isAnulado,
-      }));
-    return [...virtualBoletaImages, ...physicalBoletas].sort(
-      (left, right) => new Date(right.fecha).getTime() - new Date(left.fecha).getTime()
-    );
-  }, [movements, virtualBoletaImages]);
+    return movements
+      .filter((movement) => movement.tipo === 'BOLETA')
+      .flatMap((movement) => {
+        const imageUrl = movement.imageId
+          ? persistedImageUrls[movement.imageId]
+          : movement.fotoUrl;
+        if (!imageUrl) return [];
+        return [{
+          id: movement.id,
+          imageUrl,
+          customerId: movement.customerId,
+          numeroBoleta: movement.numeroBoleta,
+          fecha: movement.fecha,
+          monto: movement.monto,
+          descripcion: movement.descripcion,
+          registradoPor: movement.registradoPor,
+          isVirtual: Boolean(movement.boletaVirtualId && movement.imageId),
+          isAnulada: movement.isAnulado,
+        }];
+      })
+      .sort(
+        (left, right) => new Date(right.fecha).getTime() - new Date(left.fecha).getTime()
+      );
+  }, [movements, persistedImageUrls]);
 
   const filteredPhotos = boletaPhotos.filter((boleta) => {
     const customer = customers.find((current) => current.id === boleta.customerId);
