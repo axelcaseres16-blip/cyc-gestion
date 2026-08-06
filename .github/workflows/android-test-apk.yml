@@ -1,0 +1,86 @@
+name: APK Android de prueba
+
+on:
+  push:
+    branches:
+      - fix/anulacion-integral-durable
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-test-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug-apk:
+    name: Compilar APK debug
+    if: github.ref == 'refs/heads/fix/anulacion-integral-durable'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v4
+
+      - name: Configurar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependencias web
+        run: pnpm install --frozen-lockfile
+
+      - name: Generar aplicación web
+        run: pnpm run build
+
+      - name: Sincronizar Capacitor Android
+        run: pnpm exec cap sync android
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Compilar app-debug.apk
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Publicar APK como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CYC-Gestion-Prueba-app-debug-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Descargar APK para la Release de prueba
+        uses: actions/download-artifact@v4
+        with:
+          name: CYC-Gestion-Prueba-app-debug-${{ github.sha }}
+          path: release-apk
+
+      - name: Actualizar Release de prueba
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: test-apk-fix-anulacion-integral-durable
+          SHA: ${{ github.sha }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes "APK debug actualizado desde la rama de prueba. Commit: $SHA"
+            gh release upload "$TAG" release-apk/app-debug.apk --clobber
+          else
+            gh release create "$TAG" release-apk/app-debug.apk \
+              --target "$SHA" \
+              --title "APK de prueba — C&C Gestión" \
+              --notes "APK debug actualizado desde la rama de prueba. Commit: $SHA" \
+              --prerelease
+          fi
