@@ -3,6 +3,7 @@ import { CustomerWithBalance, Movement, Customer, CustomerVisit, WhatsAppTemplat
 import { AlertCircle } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
+import { TestVersionNotice } from './components/TestVersionNotice';
 import {
   getCustomersWithBalances,
   getStoredMovements,
@@ -327,6 +328,7 @@ export default function App() {
     <div className="min-h-[100dvh] w-full max-w-full bg-slate-100 text-slate-900 flex flex-col md:flex-row font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden">
       {/* PWA Install Banner & Offline Notification */}
       <PwaInstallBanner />
+      <TestVersionNotice />
 
       {/* Sidebar de Escritorio (Exclusivo 1024px+ / md+) */}
       <SidebarDesktop

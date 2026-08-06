@@ -103,7 +103,7 @@ export const PwaInstallBanner: React.FC<PwaInstallProps> = () => {
                 C&C
               </div>
               <span className="font-semibold text-slate-200 text-xs">
-                Instalá <strong className="text-white">C&C Gestión</strong> en tu celular como App Nativa
+                Instalá <strong className="text-white">C&C Gestión Prueba</strong> en tu celular como App Nativa
               </span>
             </div>
 
@@ -143,8 +143,8 @@ export const PwaInstallBanner: React.FC<PwaInstallProps> = () => {
                 C&C
               </div>
               <div>
-                <h3 className="text-lg font-black text-slate-900 tracking-tight">C&C Gestión PWA</h3>
-                <p className="text-xs text-slate-500 font-medium">Aplicación Web Progresiva Oficial</p>
+                <h3 className="text-lg font-black text-slate-900 tracking-tight">C&C Gestión Prueba</h3>
+                <p className="text-xs text-slate-500 font-medium">Aplicación Web Progresiva para reparto</p>
               </div>
             </div>
 

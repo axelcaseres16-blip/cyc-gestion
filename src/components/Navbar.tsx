@@ -88,6 +88,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="min-w-0">
               <div className="flex items-center space-x-1.5 min-w-0">
                 <span className="font-black text-sm tracking-tight text-white truncate">C&C Gestión</span>
+                <span className="text-[8px] uppercase font-black tracking-wider bg-amber-400 text-amber-950 px-1.5 py-0.5 rounded-full shrink-0">
+                  Prueba
+                </span>
                 <span className="hidden xs:inline-block text-[9px] uppercase font-bold tracking-wider bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 shrink-0">
                   Distribuidora
                 </span>
@@ -114,6 +117,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 activeView === 'fichacliente' ? '📄 Ficha de Cliente' : 'C&C Gestión'
               }</span>
             </h2>
+            <span className="text-[9px] uppercase font-black tracking-wider bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full">Versión de prueba</span>
           </div>
 
           {/* Connection Status Badge (Desktop/Tablet) */}
@@ -193,16 +197,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
 
               {/* Respaldos (Solo Admin/Dueño) */}
-              {!isRepartidor && (
-                <button
-                  id="btn-open-backup"
-                  onClick={onOpenBackupModal}
-                  className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition cursor-pointer min-h-[38px]"
-                  title="Respaldos y Datos"
-                >
-                  <Download className="w-4.5 h-4.5" />
-                </button>
-              )}
+              <button
+                id="btn-open-backup"
+                onClick={onOpenBackupModal}
+                className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition cursor-pointer min-h-[38px]"
+                title="Respaldos y Datos"
+              >
+                <Download className="w-4.5 h-4.5" />
+              </button>
 
               {/* Botón Cerrar Sesión */}
               <button
@@ -295,18 +297,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
 
               {/* Respaldos */}
-              {!isRepartidor && (
-                <button
-                  onClick={() => {
-                    setIsUserMenuOpen(false);
-                    onOpenBackupModal();
-                  }}
-                  className="w-full p-2.5 min-h-[44px] bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center space-x-2 cursor-pointer transition"
-                >
-                  <Download className="w-4 h-4 text-blue-400" />
-                  <span>Respaldos de Datos</span>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  setIsUserMenuOpen(false);
+                  onOpenBackupModal();
+                }}
+                className="w-full p-2.5 min-h-[44px] bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center space-x-2 cursor-pointer transition"
+              >
+                <Download className="w-4 h-4 text-blue-400" />
+                <span>Respaldos de Datos</span>
+              </button>
 
               {/* Cerrar Sesión */}
               <button

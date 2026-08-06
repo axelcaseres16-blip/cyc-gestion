@@ -1,9 +1,9 @@
-const CACHE_NAME = 'cyc-gestal-v1.0.0';
+const CACHE_NAME = 'cyc-prueba-v1.0.0';
 
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
-  '/manifest.json',
+  '/manifest.webmanifest',
   '/favicon.png',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
@@ -67,7 +67,7 @@ self.addEventListener('fetch', (event) => {
             return cachedResponse;
           }
           return new Response(
-            '<html><body><h2>C&C Gestión - Modo Offline</h2><p>La aplicación está lista para usarse sin conexión. Volvé a recargar.</p></body></html>',
+            '<html><body><h2>C&C Gestión Prueba - Modo Offline</h2><p>La aplicación está lista para usarse sin conexión. Volvé a abrirla cuando hayas cargado la versión una vez con internet.</p></body></html>',
             { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
           );
         })

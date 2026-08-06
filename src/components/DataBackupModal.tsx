@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { X, Download, Upload, RotateCcw, CheckCircle2, AlertCircle, Database } from 'lucide-react';
-import { exportAllDataJSON, importAllDataJSON, resetToDemoData } from '../utils/storage';
+import { X, Download, Upload, CheckCircle2, AlertCircle, Database, BarChart3 } from 'lucide-react';
+import { exportAllDataJSON, importAllDataJSON } from '../utils/storage';
+import { exportTestDayBackup, getTestBackupFileName, getTestDaySummary, TestDaySummary } from '../utils/testDayTools';
+import { formatCurrency } from '../utils/formatters';
 
 interface DataBackupModalProps {
   isOpen: boolean;
@@ -14,6 +16,8 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
   onRefreshData,
 }) => {
   const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [daySummary, setDaySummary] = useState<TestDaySummary | null>(null);
+  const [isExportingTestBackup, setIsExportingTestBackup] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -29,6 +33,37 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
     link.click();
     document.body.removeChild(link);
     setMsg({ text: 'Respaldo exportado correctamente en formato JSON.', type: 'success' });
+  };
+
+  const handleDownloadTestBackup = async () => {
+    setIsExportingTestBackup(true);
+    try {
+      const jsonStr = await exportTestDayBackup();
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', getTestBackupFileName());
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setMsg({ text: 'Respaldo completo de prueba exportado correctamente.', type: 'success' });
+    } catch (error) {
+      console.error('No se pudo exportar el respaldo completo de prueba:', error);
+      setMsg({ text: 'No se pudo exportar el respaldo completo de prueba.', type: 'error' });
+    } finally {
+      setIsExportingTestBackup(false);
+    }
+  };
+
+  const handleShowDaySummary = async () => {
+    try {
+      setDaySummary(await getTestDaySummary());
+    } catch (error) {
+      console.error('No se pudo calcular el resumen del día:', error);
+      setMsg({ text: 'No se pudo calcular el resumen del día.', type: 'error' });
+    }
   };
 
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,14 +83,6 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
         }
       };
       reader.readAsText(file);
-    }
-  };
-
-  const handleResetDemo = () => {
-    if (window.confirm('¿Confirmás restablecer la base de datos a los datos de muestra iniciales de C&C Gestión?')) {
-      resetToDemoData();
-      onRefreshData();
-      setMsg({ text: 'Datos restablecidos a la versión inicial de muestra.', type: 'success' });
     }
   };
 
@@ -87,6 +114,38 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
           )}
 
           <div className="space-y-3">
+            <button
+              onClick={handleDownloadTestBackup}
+              disabled={isExportingTestBackup}
+              className="w-full p-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-2 shadow-xs"
+            >
+              <Download className="w-4 h-4" />
+              <span>{isExportingTestBackup ? 'Preparando respaldo...' : 'Exportar respaldo completo de prueba'}</span>
+            </button>
+
+            <button
+              onClick={handleShowDaySummary}
+              className="w-full p-3 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-2"
+            >
+              <BarChart3 className="w-4 h-4 text-blue-700" />
+              <span>Ver resumen del día</span>
+            </button>
+
+            {daySummary && (
+              <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-700">
+                <p>Clientes visitados: <strong>{daySummary.clientesVisitados}</strong></p>
+                <p>Ventas: <strong>{daySummary.ventas}</strong></p>
+                <p>Total vendido: <strong>{formatCurrency(daySummary.totalVendido)}</strong></p>
+                <p>Efectivo: <strong>{formatCurrency(daySummary.efectivoCobrado)}</strong></p>
+                <p>Transferencias: <strong>{formatCurrency(daySummary.transferenciasCobradas)}</strong></p>
+                <p>Pendiente: <strong>{formatCurrency(daySummary.totalPendiente)}</strong></p>
+                <p>Boletas generadas: <strong>{daySummary.boletasGeneradas}</strong></p>
+                <p>Boletas enviadas: <strong>{daySummary.boletasEnviadas}</strong></p>
+                <p>Recuperaciones pendientes: <strong>{daySummary.pendientesRecuperacion}</strong></p>
+                <p>Errores pendientes: <strong>{daySummary.erroresPendientes}</strong></p>
+              </div>
+            )}
+
             {/* Download Backup */}
             <button
               onClick={handleDownloadBackup}
@@ -112,14 +171,6 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
               <span>Restaurar Copia desde Archivo JSON</span>
             </button>
 
-            {/* Reset Demo Data */}
-            <button
-              onClick={handleResetDemo}
-              className="w-full p-3 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-2"
-            >
-              <RotateCcw className="w-4 h-4 text-amber-600" />
-              <span>Restablecer Datos de Ejemplo Iniciales</span>
-            </button>
           </div>
 
           <div className="pt-2 border-t border-slate-200 text-center">
