@@ -50,6 +50,10 @@ jobs:
           java-version: '21'
           cache: gradle
 
+      - name: Habilitar Gradle Wrapper
+        working-directory: android
+        run: chmod +x gradlew
+
       - name: Compilar app-debug.apk
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
