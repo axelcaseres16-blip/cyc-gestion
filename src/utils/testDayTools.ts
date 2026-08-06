@@ -121,6 +121,8 @@ export async function exportTestDayBackup(): Promise<string> {
     virtualBoletas: getStoredVirtualBoletas(),
     visits: getStoredVisits(),
     products: getStoredProducts(),
+    priceLists: JSON.parse(localStorage.getItem('cyc_gestion_price_lists_v1') || '[]'),
+    priceListHistory: JSON.parse(localStorage.getItem('cyc_gestion_price_list_history_v1') || '[]'),
     stockMovements: getStoredStockMovements(),
     stockPeriods: getStoredStockPeriods(),
     mataderoIngresos: getStoredMataderoIngresos(),

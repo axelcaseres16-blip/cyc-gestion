@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">C&amp;C Gestión Prueba</string>
+    <string name="title_activity_main">C&amp;C Gestión Prueba</string>
+    <string name="package_name">com.cycgestion.prueba</string>
+    <string name="custom_url_scheme">com.cycgestion.prueba</string>
+</resources>

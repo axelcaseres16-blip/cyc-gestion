@@ -3,7 +3,6 @@ import {
   CustomerWithBalance,
   CustomerBranch,
   Product,
-  PriceListType,
   BoletaItem,
   VirtualBoleta,
   AppUser,
@@ -16,6 +15,7 @@ import {
   saveProducts,
   OFFICIAL_BOLETA_CATALOG,
 } from '../utils/stockAndBoletasManager';
+import { getPriceFromList, getStoredPriceLists, savePriceList } from '../utils/priceListsManager';
 import { generateBoletaImage } from '../utils/boletaImageGenerator';
 import { persistVirtualBoletaImage } from '../utils/virtualBoletaImageStorage';
 import {
@@ -71,7 +71,9 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
 
   // Active Price List State
-  const [activePriceList, setActivePriceList] = useState<PriceListType>('GENERAL');
+  const [priceLists, setPriceLists] = useState(() => getStoredPriceLists());
+  const [activePriceListId, setActivePriceListId] = useState<string>('');
+  const activePriceList = priceLists.find((list) => list.id === activePriceListId);
 
   // Boleta Items State
   const [items, setItems] = useState<
@@ -124,8 +126,9 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
   // Auto-load Customer details when selected
   useEffect(() => {
     if (selectedCustomer) {
-      const listType = selectedCustomer.listaPrecioTipo || 'GENERAL';
-      setActivePriceList(listType);
+      const latestLists = getStoredPriceLists();
+      setPriceLists(latestLists);
+      setActivePriceListId(selectedCustomer.priceListId || '');
 
       // Default payment mode if customary
       if (selectedCustomer.formaPagoHabitual === 'EFECTIVO') setPagoTipo('EFECTIVO');
@@ -214,6 +217,11 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     };
     const updatedProducts = [...products, product];
     saveProducts(updatedProducts);
+    if (activePriceList) {
+      const nextList = { ...activePriceList, precios: { ...activePriceList.precios, [product.id]: { productId: product.id, precioKg: price, activo: price > 0 } } };
+      savePriceList(nextList, currentUser.nombre, 'Producto manual agregado desde boleta virtual');
+      setPriceLists(getStoredPriceLists());
+    }
     setProducts(updatedProducts);
     setNewProductName('');
     setNewProductPrice('');
@@ -222,28 +230,24 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
 
   const handleSelectCatalogProduct = (product: Product) => {
     setCatalogProductId(product.id);
-    setCatalogPriceInput(String(product.precios[activePriceList] ?? 0));
+    setCatalogPriceInput(String(getProductPrice(product) || ''));
   };
 
   const handleSaveCatalogPrice = () => {
     const price = parseFloat(catalogPriceInput.replace(',', '.'));
     if (!catalogProductId || !Number.isFinite(price) || price < 0) return;
 
-    const updatedProducts = products.map((product) =>
-      product.id === catalogProductId
-        ? { ...product, precios: { ...product.precios, [activePriceList]: price } }
-        : product
-    );
-    saveProducts(updatedProducts);
-    setProducts(updatedProducts);
+    if (!activePriceList) return;
+    const product = products.find((candidate) => candidate.id === catalogProductId);
+    if (!product) return;
+    const priceKey = product.tipoVenta === 'POR_UNIDAD' ? 'precioUnidad' : 'precioKg';
+    savePriceList({ ...activePriceList, precios: { ...activePriceList.precios, [product.id]: { ...activePriceList.precios[product.id], productId: product.id, activo: price > 0, [priceKey]: price } } }, currentUser.nombre, 'Precio actualizado desde Boleta Virtual');
+    setPriceLists(getStoredPriceLists());
     setUnpricedProductNotice('Precio actualizado para la lista actual.');
   };
 
   const getProductPrice = (product: Product) => {
-    if (selectedCustomer?.preciosPersonalizados?.[product.id] !== undefined) {
-      return selectedCustomer.preciosPersonalizados[product.id];
-    }
-    return product.precios[activePriceList] ?? 0;
+    return getPriceFromList(activePriceList, product);
   };
 
   // Calculate Subtotal for an Item
@@ -260,14 +264,6 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     const kilajeReal = parseFloat(kgInput.replace(',', '.')) || 0;
 
     let precioAplicado = getProductPrice(prod);
-
-    // Custom customer prices
-    if (
-      selectedCustomer?.preciosPersonalizados &&
-      selectedCustomer.preciosPersonalizados[prod.id] !== undefined
-    ) {
-      precioAplicado = selectedCustomer.preciosPersonalizados[prod.id];
-    }
 
     // Owner/Admin manual override
     if (isDuenoOrAdmin && precioOverride.trim() !== '') {
@@ -421,6 +417,11 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       return;
     }
 
+    if (!activePriceList || activePriceList.estado !== 'ACTIVA') {
+      alert('El cliente no tiene una lista de precios activa asignada. Un Dueño o Administrador debe asignarla antes de vender.');
+      return;
+    }
+
     if (processedItems.length === 0 || totalBoleta <= 0) {
       alert('Debe agregar al menos un producto con importe superior a $0.');
       return;
@@ -448,7 +449,9 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       pagoOtros: otrosNum,
       fotoBoletaFisicaUrl: fotoUrl, // optional
       usuario: currentUser.nombre,
-      listaPrecioAplicada: activePriceList,
+      listaPrecioAplicada: activePriceList?.nombre || 'SIN LISTA',
+      priceListId: activePriceList?.id,
+      priceListName: activePriceList?.nombre,
     });
 
     // Generate 1080px mobile-optimized image automatically
@@ -540,10 +543,11 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
             <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
               {customers
                 .filter(
-                  (c) =>
+                  (c) => !c.archivado && (
                     c.nombre.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
                     (c.alias && c.alias.toLowerCase().includes(customerSearchQuery.toLowerCase())) ||
                     c.direccion.toLowerCase().includes(customerSearchQuery.toLowerCase())
+                  )
                 )
                 .map((cust) => (
                   <div
@@ -559,7 +563,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                     </div>
                     <div className="text-right">
                       <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-md">
-                        Lista: {cust.listaPrecioTipo || 'GENERAL'}
+                        Lista: {priceLists.find((list) => list.id === cust.priceListId)?.nombre || 'Sin lista asignada'}
                       </span>
                       <p className="text-xs font-black text-slate-900 mt-1">
                         Deuda: {formatCurrency(cust.saldoActual)}
@@ -619,7 +623,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-2 border-t border-slate-200/80">
               <div className="bg-white p-2 rounded-lg border border-slate-200">
                 <span className="text-slate-500 font-bold block">Lista Asignada:</span>
-                <span className="font-black text-slate-900">{activePriceList}</span>
+                <span className="font-black text-slate-900">{activePriceList?.nombre || 'Sin lista asignada'}</span>
               </div>
               <div className="bg-white p-2 rounded-lg border border-slate-200">
                 <span className="text-slate-500 font-bold block">Saldo Actual Cuenta:</span>
@@ -635,6 +639,8 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
               </div>
             </div>
 
+            {!activePriceList && <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-black text-red-900">El cliente no tiene una lista de precios asignada. La venta queda bloqueada hasta que un Dueño o Administrador la asigne.</div>}
+
             {/* Owner / Admin List Override */}
             {isDuenoOrAdmin && (
               <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-center justify-between text-xs">
@@ -642,14 +648,12 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                   👑 Permiso Especial: Cambiar Lista de Precios
                 </span>
                 <select
-                  value={activePriceList}
-                  onChange={(e) => setActivePriceList(e.target.value as PriceListType)}
+                  value={activePriceListId}
+                  onChange={(e) => setActivePriceListId(e.target.value)}
                   className="bg-white border border-amber-300 font-bold text-amber-900 rounded-lg px-2.5 py-1"
                 >
-                  <option value="GENERAL">Lista General</option>
-                  <option value="MAYORISTA">Lista Mayorista</option>
-                  <option value="ESPECIAL">Lista Especial</option>
-                  <option value="PERSONALIZADA">Lista Personalizada</option>
+                  <option value="">Sin lista</option>
+                  {priceLists.filter((list) => list.estado === 'ACTIVA').map((list) => <option key={list.id} value={list.id}>{list.nombre}</option>)}
                 </select>
               </div>
             )}
@@ -678,7 +682,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
 
         {showProductCreator && isDuenoOrAdmin && (
           <div className="space-y-3 border-y border-slate-300 bg-slate-50 py-3">
-            <p className="text-[11px] font-semibold text-slate-600">Configurá el precio de la lista {activePriceList}. Los productos sin precio quedan bloqueados para reparto.</p>
+            <p className="text-[11px] font-semibold text-slate-600">Configurá el precio de la lista {activePriceList?.nombre || 'sin lista'}. Los productos sin precio quedan bloqueados para reparto.</p>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {orderedProductRows.map(({ rowName, product }) => (
                 <button
@@ -692,6 +696,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                 </button>
               ))}
             </div>
+
             {catalogProduct && (
               <div className="grid grid-cols-1 gap-2 border-t border-slate-200 pt-3 sm:grid-cols-[1fr_170px_auto]">
                 <span className="self-center text-xs font-black text-slate-800">{catalogProduct.nombre}</span>
@@ -736,7 +741,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                 return (
                   <tr
                     key={product?.id || rowName}
-                    onClick={() => !hasPrice && setUnpricedProductNotice(`${rowName} no tiene precio en la lista ${activePriceList}.${isDuenoOrAdmin ? ' Configuralo desde Administrar productos.' : ''}`)}
+                    onClick={() => !hasPrice && setUnpricedProductNotice(`${rowName} no tiene precio en la lista ${activePriceList?.nombre || 'sin lista'}.${isDuenoOrAdmin ? ' Configuralo desde Administrar productos.' : ''}`)}
                     className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} h-11 ${!hasPrice ? 'cursor-pointer' : ''}`}
                   >
                     <td className="break-words px-1 py-1 font-bold leading-tight text-slate-800 sm:px-3">

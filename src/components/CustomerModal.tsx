@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Customer, CustomerCategory, VisitFrequency, CustomerStatus } from '../types';
+import { Customer, CustomerCategory, VisitFrequency, CustomerStatus, PriceList } from '../types';
 import { normalizeArgentineWhatsAppNumber } from '../utils/whatsappUtils';
 import { X, Save, Building2, MapPin, Phone, DollarSign, Calendar, AlertCircle } from 'lucide-react';
 
@@ -9,6 +9,7 @@ interface CustomerModalProps {
   onSave: (customerData: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>, initialBalance: number) => void;
   initialCustomer?: Customer | null;
   availableRoutes: string[];
+  priceLists: PriceList[];
 }
 
 export const CustomerModal: React.FC<CustomerModalProps> = ({
@@ -17,6 +18,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
   onSave,
   initialCustomer,
   availableRoutes,
+  priceLists,
 }) => {
   const [nombre, setNombre] = useState('');
   const [alias, setAlias] = useState('');
@@ -34,6 +36,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
   const [diasTopeCredito, setDiasTopeCredito] = useState<number>(14);
   const [saldoInicial, setSaldoInicial] = useState<number>(0);
   const [observaciones, setObservaciones] = useState('');
+  const [priceListId, setPriceListId] = useState('');
 
   useEffect(() => {
     if (initialCustomer) {
@@ -51,6 +54,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
       setLimiteCredito(initialCustomer.limiteCredito || 0);
       setDiasTopeCredito(initialCustomer.diasTopeCredito || 14);
       setObservaciones(initialCustomer.observaciones || '');
+      setPriceListId(initialCustomer.priceListId || '');
       setSaldoInicial(0); // Edición no cambia saldo inicial
     } else {
       setNombre('');
@@ -68,6 +72,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
       setDiasTopeCredito(14);
       setSaldoInicial(0);
       setObservaciones('');
+      setPriceListId(priceLists.find((list) => list.estado === 'ACTIVA')?.id || '');
     }
   }, [initialCustomer, isOpen]);
 
@@ -98,6 +103,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
         limiteCredito: Number(limiteCredito) || 0,
         diasTopeCredito: Number(diasTopeCredito) || 14,
         observaciones: observaciones.trim(),
+        priceListId: priceListId || undefined,
       },
       Number(saldoInicial) || 0
     );
@@ -341,6 +347,15 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                 </select>
               </div>
             )}
+
+            {/* Observaciones */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Lista de precios</label>
+              <select value={priceListId} onChange={(e) => setPriceListId(e.target.value)} className="w-full px-3 py-2 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900">
+                <option value="">Sin lista asignada</option>
+                {priceLists.filter((list) => list.estado === 'ACTIVA').map((list) => <option key={list.id} value={list.id}>{list.nombre}</option>)}
+              </select>
+            </div>
 
             {/* Observaciones */}
             <div className="sm:col-span-2">

@@ -14,6 +14,7 @@ import {
   PendingSale,
   PaymentMethod,
   AppUser,
+  UserRole,
 } from '../types';
 import { calculateCustomerRisk } from './riskCalculator';
 import { DEFAULT_WHATSAPP_TEMPLATES, formatDate, formatCurrency, VISIT_RESULT_LABELS, cleanPhoneNumber } from './formatters';
@@ -1066,6 +1067,101 @@ export interface MovementCancellationResult {
   movement?: Movement;
 }
 
+export interface CustomerHistorySummary {
+  movimientos: number;
+  boletas: number;
+  imagenes: number;
+  visitas: number;
+  sucursales: number;
+  saldoActual: number;
+  tieneHistorial: boolean;
+}
+
+export function getCustomerHistorySummary(customerId: string): CustomerHistorySummary {
+  const customer = getStoredCustomers().find((entry) => entry.id === customerId);
+  const movements = getStoredMovements().filter((movement) => movement.customerId === customerId);
+  const visits = getStoredVisits().filter((visit) => visit.customerId === customerId);
+  const boletas = movements.filter((movement) => movement.tipo === 'BOLETA');
+  const imageCount = movements.filter((movement) => Boolean(movement.imageId || movement.fotoUrl)).length;
+  const saldoActual = movements.filter((movement) => !movement.isAnulado).reduce(
+    (total, movement) => total + (movement.esDebito ? movement.monto : -movement.monto),
+    0
+  );
+  return {
+    movimientos: movements.length,
+    boletas: boletas.length,
+    imagenes: imageCount,
+    visitas: visits.length,
+    sucursales: customer?.sucursales?.length || 0,
+    saldoActual,
+    tieneHistorial: movements.length > 0 || visits.length > 0 || imageCount > 0,
+  };
+}
+
+export function archiveCustomer(customerId: string, usuario: string, rol: UserRole, motivo?: string): void {
+  const customers = getStoredCustomers();
+  const customer = customers.find((entry) => entry.id === customerId);
+  if (!customer) throw new Error('El cliente no existe.');
+  customer.archivado = true;
+  customer.archivadoAt = new Date().toISOString();
+  customer.archivadoPor = usuario;
+  customer.updatedAt = customer.archivadoAt;
+  saveCustomers(customers);
+  const name = customer.alias || customer.nombre;
+  addActivityLog(usuario, `archivó el cliente ${name}`, 'CLIENTE', customer.id, name, motivo);
+  recordAuditLog({ usuario, rol, accion: `ARCHIVAR cliente ${name}`, tipoAccion: 'CLIENTE', customerId, customerName: name, detalles: motivo });
+}
+
+export function reactivateCustomer(customerId: string, usuario: string, rol: UserRole): void {
+  const customers = getStoredCustomers();
+  const customer = customers.find((entry) => entry.id === customerId);
+  if (!customer) throw new Error('El cliente no existe.');
+  customer.archivado = false;
+  customer.archivadoAt = undefined;
+  customer.archivadoPor = undefined;
+  customer.updatedAt = new Date().toISOString();
+  saveCustomers(customers);
+  const name = customer.alias || customer.nombre;
+  addActivityLog(usuario, `reactivó el cliente ${name}`, 'CLIENTE', customer.id, name);
+  recordAuditLog({ usuario, rol, accion: `REACTIVAR cliente ${name}`, tipoAccion: 'CLIENTE', customerId, customerName: name });
+}
+
+export function deleteCustomerIfEmpty(customerId: string, usuario: string, rol: UserRole, motivo?: string): void {
+  const summary = getCustomerHistorySummary(customerId);
+  if (summary.saldoActual !== 0 || summary.tieneHistorial) {
+    throw new Error('El cliente tiene historial o saldo y sólo puede archivarse.');
+  }
+  const customer = getStoredCustomers().find((entry) => entry.id === customerId);
+  if (!customer) return;
+  saveCustomers(getStoredCustomers().filter((entry) => entry.id !== customerId));
+  const name = customer.alias || customer.nombre;
+  addActivityLog(usuario, `eliminó el cliente ${name}`, 'CLIENTE', customerId, name, motivo);
+  recordAuditLog({ usuario, rol, accion: `ELIMINAR cliente ${name}`, tipoAccion: 'CLIENTE', customerId, customerName: name, detalles: motivo });
+}
+
+export function getDemoCustomers(): Customer[] {
+  const demoIds = new Set(MOCK_INITIAL_CUSTOMERS.map((customer) => customer.id));
+  return getStoredCustomers().filter((customer) => demoIds.has(customer.id));
+}
+
+export function cleanDemoCustomers(usuario: string, rol: UserRole): { deleted: string[]; archived: string[] } {
+  if (rol !== 'DUENO') throw new Error('Sólo el Dueño puede limpiar los datos de demostración.');
+  const deleted: string[] = [];
+  const archived: string[] = [];
+  for (const customer of getDemoCustomers()) {
+    const summary = getCustomerHistorySummary(customer.id);
+    if (!summary.tieneHistorial && summary.saldoActual === 0) {
+      deleteCustomerIfEmpty(customer.id, usuario, rol, 'Limpieza de datos de demostración');
+      deleted.push(customer.id);
+    } else {
+      archiveCustomer(customer.id, usuario, rol, 'Limpieza de datos de demostración: se conserva historial');
+      archived.push(customer.id);
+    }
+  }
+  recordAuditLog({ usuario, rol, accion: 'LIMPIAR datos de demostración', tipoAccion: 'CONFIGURACION', detalles: `Eliminados: ${deleted.length}; archivados: ${archived.length}` });
+  return { deleted, archived };
+}
+
 export function anularMovement(
   movementId: string,
   user: AppUser,
@@ -1371,6 +1467,8 @@ export function exportAllDataJSON(): string {
     visits: getStoredVisits(),
     activity: getActivityLogs(),
     templates: getWhatsAppTemplates(),
+    priceLists: JSON.parse(localStorage.getItem('cyc_gestion_price_lists_v1') || '[]'),
+    priceListHistory: JSON.parse(localStorage.getItem('cyc_gestion_price_list_history_v1') || '[]'),
   };
   return JSON.stringify(data, null, 2);
 }
@@ -1383,6 +1481,8 @@ export function importAllDataJSON(jsonString: string): boolean {
       saveMovements(parsed.movements);
       if (Array.isArray(parsed.visits)) saveVisits(parsed.visits);
       if (parsed.templates) saveWhatsAppTemplates(parsed.templates);
+      if (Array.isArray(parsed.priceLists)) localStorage.setItem('cyc_gestion_price_lists_v1', JSON.stringify(parsed.priceLists));
+      if (Array.isArray(parsed.priceListHistory)) localStorage.setItem('cyc_gestion_price_list_history_v1', JSON.stringify(parsed.priceListHistory));
       return true;
     }
     return false;

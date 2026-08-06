@@ -16,6 +16,7 @@ import {
   Download,
   Settings,
   MessageSquare,
+  Tags,
 } from 'lucide-react';
 
 interface NavigationProps {
@@ -92,6 +93,11 @@ export const Navigation: React.FC<NavigationProps> = ({
       icon: Users,
       badge: riskyCount > 0 ? `${riskyCount} riesgo` : undefined,
       badgeColor: 'bg-red-500/10 text-red-600 border-red-500/20',
+    },
+    {
+      id: 'listasprecios',
+      label: 'Listas de Precios',
+      icon: Tags,
     },
     {
       id: 'cuentacorriente',

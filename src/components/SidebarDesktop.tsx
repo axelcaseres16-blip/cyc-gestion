@@ -11,6 +11,7 @@ import {
   Zap,
   ShieldCheck,
   Building2,
+  Tags,
 } from 'lucide-react';
 
 interface SidebarDesktopProps {
@@ -118,6 +119,11 @@ export const SidebarDesktop: React.FC<SidebarDesktopProps> = ({
       icon: Users,
       badge: riskyCount > 0 ? `${riskyCount} riesgo` : undefined,
       badgeColor: 'bg-red-500/20 text-red-300 border-red-500/30',
+    },
+    {
+      id: 'listasprecios',
+      label: 'Listas de Precios',
+      icon: Tags,
     },
     {
       id: 'cobranzas',

@@ -15,6 +15,7 @@ import {
 } from '../utils/completedSaleStorage';
 import { getStoredCustomers, saveCustomers } from '../utils/storage';
 import { getPersistedVirtualBoletaImageUrl, persistVirtualBoletaImage } from '../utils/virtualBoletaImageStorage';
+import { saveInvoiceImage, shareInvoiceImage } from '../utils/imageShare';
 import { generateBoletaImage } from '../utils/boletaImageGenerator';
 import {
   X,
@@ -210,6 +211,18 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
   const handleSaveImage = async () => {
     const sourceImage = await ensurePersistedImage();
     if (!sourceImage) return;
+    try {
+      const imageResponse = await fetch(sourceImage);
+      const imageBlob = await imageResponse.blob();
+      const imageFile = new File(
+        [imageBlob],
+        `Boleta-CYC-${boleta.numeroBoleta}.png`,
+        { type: 'image/png' }
+      );
+      if (await saveInvoiceImage(imageFile)) return;
+    } catch (error) {
+      console.error('No se pudo preparar la imagen para guardar:', error);
+    }
     const download = document.createElement('a');
     download.href = sourceImage;
     download.download = `Boleta-CYC-${boleta.numeroBoleta}.png`;
@@ -228,21 +241,20 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
         `Boleta-CYC-${boleta.numeroBoleta}.png`,
         { type: 'image/png' }
       );
-      const shareData = {
-        files: [imageFile],
+      const shared = await shareInvoiceImage({
+        file: imageFile,
         title: `Boleta C&C ${boleta.numeroBoleta}`,
         text: shortMessage,
-      };
+      });
 
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [imageFile] })) {
+      if (shared) {
         setEnvioEstado('COMPARTIR_ABIERTO');
         updatePendingSaleEnvioEstado('COMPARTIR_ABIERTO');
-        await navigator.share(shareData);
         setShowConfirmReturnPrompt(true);
         return;
       }
 
-      handleSaveImage();
+      await handleSaveImage();
       handleCopyText();
       setEnvioEstado('PENDIENTE');
       updatePendingSaleEnvioEstado('PENDIENTE');
@@ -253,7 +265,7 @@ export const VirtualBoletaModal: React.FC<VirtualBoletaModalProps> = ({
         updatePendingSaleEnvioEstado('PENDIENTE');
         return;
       }
-      handleSaveImage();
+      await handleSaveImage();
       handleCopyText();
       setEnvioEstado('PENDIENTE');
       updatePendingSaleEnvioEstado('PENDIENTE');

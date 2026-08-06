@@ -9,6 +9,8 @@ import {
   VISIT_RESULT_LABELS,
 } from '../utils/formatters';
 import { getCustomerTimeline, getActivityLogs, addActivityLog } from '../utils/storage';
+import { archiveCustomer, deleteCustomerIfEmpty, getCustomerHistorySummary, reactivateCustomer } from '../utils/storage';
+import { assignCustomersToPriceList, createExclusivePriceList, getStoredPriceLists } from '../utils/priceListsManager';
 import { getPersistedVirtualBoletaImageUrl } from '../utils/virtualBoletaImageStorage';
 import {
   ArrowLeft,
@@ -32,6 +34,9 @@ import {
   History,
   Lock,
   ExternalLink,
+  Archive,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 
 interface CustomerDetailProps {
@@ -47,6 +52,7 @@ interface CustomerDetailProps {
   onOpenNewAjuste: (customerId: string) => void;
   onOpenRegistrarVisita: (customer: CustomerWithBalance) => void;
   onViewImage: (imageUrl: string, title: string) => void;
+  onRefreshData: () => void;
 }
 
 export const CustomerDetail: React.FC<CustomerDetailProps> = ({
@@ -62,9 +68,12 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
   onOpenNewAjuste,
   onOpenRegistrarVisita,
   onViewImage,
+  onRefreshData,
 }) => {
   const [activeTab, setActiveTab] = useState<'TIMELINE' | 'MOVIMIENTOS' | 'VISITAS'>('TIMELINE');
   const [movementFilter, setMovementFilter] = useState<string>('TODOS');
+  const [showDeletion, setShowDeletion] = useState(false);
+  const [deletionReason, setDeletionReason] = useState('');
 
   if (!customer) {
     return (
@@ -108,6 +117,21 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
   const isRepartidor = currentUserRole === 'REPARTIDOR';
   const isSoloLectura = currentUserRole === 'SOLO_LECTURA';
   const canEditCustomerAndBalance = !isRepartidor && !isSoloLectura;
+  const activePriceLists = getStoredPriceLists().filter((list) => list.estado === 'ACTIVA');
+  const historySummary = getCustomerHistorySummary(customer.id);
+
+  const handleArchive = () => {
+    archiveCustomer(customer.id, `Usuario (${currentUserRole})`, currentUserRole as any, deletionReason || undefined);
+    onRefreshData();
+    setShowDeletion(false);
+  };
+
+  const handleDelete = () => {
+    deleteCustomerIfEmpty(customer.id, `Usuario (${currentUserRole})`, currentUserRole as any, deletionReason || undefined);
+    onRefreshData();
+    setShowDeletion(false);
+    onBack();
+  };
 
   // Log de actividad para envíos de WhatsApp
   const handleWhatsAppClick = (type: 'SALDO' | 'PEDIDO') => {
@@ -140,15 +164,7 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
           <span>Volver a la nómina</span>
         </button>
 
-        {canEditCustomerAndBalance && (
-          <button
-            onClick={() => onEditCustomer(customer)}
-            className="flex items-center space-x-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white px-3.5 py-2 rounded-xl border border-slate-200 transition shadow-2xs"
-          >
-            <Edit className="w-4 h-4 text-blue-600" />
-            <span>Editar Cliente</span>
-          </button>
-        )}
+        {canEditCustomerAndBalance && <div className="flex flex-wrap justify-end gap-2"><button onClick={() => onEditCustomer(customer)} className="flex items-center space-x-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white px-3.5 py-2 rounded-xl border border-slate-200 transition shadow-2xs"><Edit className="w-4 h-4 text-blue-600" /><span>Editar Cliente</span></button>{customer.archivado ? <button onClick={() => { reactivateCustomer(customer.id, `Usuario (${currentUserRole})`, currentUserRole as any); onRefreshData(); }} className="flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800"><RotateCcw className="w-4 h-4" />Reactivar</button> : <button onClick={() => setShowDeletion(true)} className="flex items-center gap-1.5 rounded-xl border border-red-300 bg-red-50 px-3.5 py-2 text-xs font-bold text-red-800"><Trash2 className="w-4 h-4" />Eliminar cliente</button>}</div>}
       </div>
 
       {/* Profile Header Card */}
@@ -340,9 +356,15 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
               <span>Última compra:</span>
               <strong>{customer.fechaUltimaCompra ? formatDate(customer.fechaUltimaCompra) : '-'}</strong>
             </div>
+            <div className="pt-2 border-t border-slate-200 space-y-2">
+              <span className="font-bold text-slate-600">Lista de precios asignada:</span>
+              {canEditCustomerAndBalance ? <div className="flex gap-2"><select value={customer.priceListId || ''} onChange={(event) => { if (event.target.value) { assignCustomersToPriceList(event.target.value, [customer.id], `Usuario (${currentUserRole})`, currentUserRole as any); onRefreshData(); } }} className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold"><option value="">Sin lista asignada</option>{activePriceLists.map((list) => <option key={list.id} value={list.id}>{list.nombre}</option>)}</select><button onClick={() => { const list = createExclusivePriceList(customer, `Usuario (${currentUserRole})`); assignCustomersToPriceList(list.id, [customer.id], `Usuario (${currentUserRole})`, currentUserRole as any, true); onRefreshData(); }} className="rounded-lg border border-amber-300 bg-amber-50 px-2 text-[10px] font-black text-amber-900">Lista exclusiva</button></div> : <strong>{activePriceLists.find((list) => list.id === customer.priceListId)?.nombre || 'Sin lista asignada'}</strong>}
+            </div>
           </div>
         </div>
       </div>
+
+      {showDeletion && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl space-y-4"><div><h2 className="text-lg font-black text-slate-900">Gestionar baja de {customer.alias || customer.nombre}</h2><p className="text-xs text-slate-600">La eliminación definitiva sólo está disponible sin historial y con saldo cero.</p></div><div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs"><p>Sucursales: <strong>{historySummary.sucursales}</strong></p><p>Saldo: <strong>{formatCurrency(historySummary.saldoActual)}</strong></p><p>Movimientos: <strong>{historySummary.movimientos}</strong></p><p>Boletas: <strong>{historySummary.boletas}</strong></p><p>Imágenes: <strong>{historySummary.imagenes}</strong></p><p>Visitas: <strong>{historySummary.visitas}</strong></p></div><input value={deletionReason} onChange={(event) => setDeletionReason(event.target.value)} placeholder="Motivo opcional" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs" /><div className="flex flex-wrap justify-end gap-2"><button onClick={() => setShowDeletion(false)} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold">Cancelar</button>{(!historySummary.tieneHistorial && historySummary.saldoActual === 0) ? <button onClick={handleDelete} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-black text-white"><Trash2 className="mr-1 inline h-4 w-4" />Eliminar definitivamente</button> : <button onClick={handleArchive} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white"><Archive className="mr-1 inline h-4 w-4" />Archivar cliente</button>}</div>{historySummary.saldoActual !== 0 && <p className="text-xs font-bold text-red-700">Tiene saldo pendiente: sólo puede archivarse.</p>}</div></div>}
 
       {/* Tabs para Alternar entre Línea de Tiempo Comercial Única y Tablas */}
       <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">

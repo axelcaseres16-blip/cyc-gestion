@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { WhatsAppTemplates, WhatsAppPostSaleBehavior } from '../types';
+import { AppUser, WhatsAppTemplates, WhatsAppPostSaleBehavior } from '../types';
 import {
   getWhatsAppTemplates,
   saveWhatsAppTemplates,
   getWhatsAppBehavior,
   saveWhatsAppBehavior,
+  cleanDemoCustomers,
+  getDemoCustomers,
 } from '../utils/storage';
 import {
   getBoletasGroupPhone,
@@ -16,18 +18,22 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onTemplatesUpdated?: () => void;
+  currentUser: AppUser;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   onTemplatesUpdated,
+  currentUser,
 }) => {
   const [informarSaldo, setInformarSaldo] = useState('');
   const [solicitarPedido, setSolicitarPedido] = useState('');
   const [waBehavior, setWaBehavior] = useState<WhatsAppPostSaleBehavior>('ALWAYS_AUTO');
   const [boletasGroupPhone, setBoletasGroupPhone] = useState('');
   const [savedMsg, setSavedMsg] = useState(false);
+  const [demoConfirmation, setDemoConfirmation] = useState('');
+  const [demoMessage, setDemoMessage] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -56,6 +62,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setSavedMsg(false);
       onClose();
     }, 1000);
+  };
+
+  const handleCleanDemo = () => {
+    if (demoConfirmation !== 'LIMPIAR') return;
+    const result = cleanDemoCustomers(currentUser.nombre, currentUser.role);
+    setDemoMessage(`Demostración procesada: ${result.deleted.length} eliminados y ${result.archived.length} archivados por historial.`);
+    setDemoConfirmation('');
+    onTemplatesUpdated?.();
   };
 
   return (
@@ -167,6 +181,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
+          {currentUser.role === 'DUENO' && (
+            <div className="space-y-2 rounded-2xl border border-red-200 bg-red-50 p-4">
+              <p className="text-xs font-black text-red-900">Limpiar datos de demostración</p>
+              <p className="text-[11px] text-red-800">Se identifican sólo clientes demo conocidos. Si tienen movimientos, saldo, boletas, imágenes o visitas, se archivan y su historial permanece intacto.</p>
+              <p className="text-[11px] font-bold text-red-900">Clientes demo detectados: {getDemoCustomers().length}</p>
+              <p className="text-[10px] text-red-800">{getDemoCustomers().map((customer) => customer.alias || customer.nombre).join(' · ') || 'No hay clientes demo para limpiar.'}</p>
+              <div className="flex gap-2"><input value={demoConfirmation} onChange={(event) => setDemoConfirmation(event.target.value)} placeholder="Escribí LIMPIAR" className="min-w-0 flex-1 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold" /><button type="button" disabled={demoConfirmation !== 'LIMPIAR'} onClick={handleCleanDemo} className="rounded-xl bg-red-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40">Limpiar</button></div>
+              {demoMessage && <p className="text-[11px] font-bold text-red-900">{demoMessage}</p>}
+            </div>
+          )}
 
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-800 flex items-center justify-between">

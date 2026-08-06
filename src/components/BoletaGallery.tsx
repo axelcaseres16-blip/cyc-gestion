@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Movement, CustomerWithBalance } from '../types';
 import { formatDate, formatCurrency } from '../utils/formatters';
 import { getPersistedVirtualBoletaImageUrl } from '../utils/virtualBoletaImageStorage';
+import { saveInvoiceImage, shareInvoiceImage } from '../utils/imageShare';
 import { Camera, Search, Eye, Download, Share2 } from 'lucide-react';
 
 interface BoletaGalleryProps {
@@ -24,7 +25,19 @@ interface GalleryBoleta {
   isAnulada?: boolean;
 }
 
-const saveImage = (imageUrl: string, numeroBoleta?: string) => {
+const saveImage = async (imageUrl: string, numeroBoleta?: string) => {
+  try {
+    const imageResponse = await fetch(imageUrl);
+    const imageBlob = await imageResponse.blob();
+    const imageFile = new File(
+      [imageBlob],
+      `Boleta-CYC-${numeroBoleta || 'sin-numero'}.png`,
+      { type: 'image/png' }
+    );
+    if (await saveInvoiceImage(imageFile)) return;
+  } catch (error) {
+    console.error('No se pudo preparar la imagen para guardar:', error);
+  }
   const download = document.createElement('a');
   download.href = imageUrl;
   download.download = `Boleta-CYC-${numeroBoleta || 'sin-numero'}.png`;
@@ -110,14 +123,16 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
     try {
       const imageBlob = await (await fetch(boleta.imageUrl)).blob();
       const imageFile = new File([imageBlob], `Boleta-CYC-${boleta.numeroBoleta || boleta.id}.png`, { type: 'image/png' });
-      if (navigator.share && navigator.canShare?.({ files: [imageFile] })) {
-        await navigator.share({ files: [imageFile], title: `Boleta C&C ${boleta.numeroBoleta || ''}` });
+      if (await shareInvoiceImage({
+        file: imageFile,
+        title: `Boleta C&C ${boleta.numeroBoleta || ''}`,
+      })) {
         return;
       }
     } catch (error) {
       console.error('No se pudo compartir la imagen de la boleta:', error);
     }
-    saveImage(boleta.imageUrl, boleta.numeroBoleta);
+    await saveImage(boleta.imageUrl, boleta.numeroBoleta);
   };
 
   return (
@@ -177,7 +192,7 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
                   <div className="grid grid-cols-3 gap-1.5 text-[10px] font-bold">
                     <button onClick={() => onViewImage(boleta.imageUrl, title)} className="flex items-center justify-center gap-1 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50"><Eye className="w-3 h-3" />Ver</button>
                     <button onClick={() => handleShare(boleta)} className="flex items-center justify-center gap-1 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50"><Share2 className="w-3 h-3" />Compartir</button>
-                    <button onClick={() => saveImage(boleta.imageUrl, boleta.numeroBoleta)} className="flex items-center justify-center gap-1 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50"><Download className="w-3 h-3" />Guardar</button>
+                    <button onClick={() => { void saveImage(boleta.imageUrl, boleta.numeroBoleta); }} className="flex items-center justify-center gap-1 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50"><Download className="w-3 h-3" />Guardar</button>
                   </div>
                 </div>
               </div>

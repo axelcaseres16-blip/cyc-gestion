@@ -1,6 +1,5 @@
 import {
   Product,
-  PriceListType,
   StockPeriod,
   MataderoIngreso,
   StockMovement,
@@ -591,7 +590,9 @@ export function finalizeVirtualBoleta(params: {
   pagoOtros: number;
   fotoBoletaFisicaUrl: string;
   usuario: string;
-  listaPrecioAplicada: PriceListType | 'PERSONALIZADA';
+  listaPrecioAplicada: string;
+  priceListId?: string;
+  priceListName?: string;
 }): { virtualBoleta: VirtualBoleta; movementBoleta: Movement } {
   const period = getActiveStockPeriod();
   const nowIso = new Date().toISOString();
@@ -632,6 +633,8 @@ export function finalizeVirtualBoleta(params: {
     fechaHora: nowIso,
     registradoPor: params.usuario,
     listaPrecioAplicada: params.listaPrecioAplicada,
+    priceListId: params.priceListId,
+    priceListName: params.priceListName,
     items: params.items,
     subtotal: params.subtotal,
     descuento: params.descuento,

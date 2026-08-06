@@ -14,6 +14,45 @@ export type UserRole = 'DUENO' | 'ADMINISTRADOR' | 'REPARTIDOR';
 
 export type PriceListType = 'GENERAL' | 'MAYORISTA' | 'ESPECIAL' | 'PERSONALIZADA';
 
+export type PriceListStatus = 'ACTIVA' | 'ARCHIVADA';
+
+export interface PriceListProductPrice {
+  productId: string;
+  precioKg?: number;
+  precioUnidad?: number;
+  activo: boolean;
+  observacion?: string;
+}
+
+export interface PriceList {
+  id: string;
+  nombre: string;
+  descripcion?: string;
+  estado: PriceListStatus;
+  color?: string;
+  creadoAt: string;
+  actualizadoAt: string;
+  creadoPor: string;
+  precios: Record<string, PriceListProductPrice>;
+  cantidadClientesAsignados: number;
+  esListaDelCliente: boolean;
+  clienteExclusivoId?: string;
+  ordenVisual: number;
+  observaciones?: string;
+  legacyType?: PriceListType;
+}
+
+export interface PriceListChangeHistory {
+  id: string;
+  priceListId: string;
+  productId: string;
+  precioAnterior?: number;
+  precioNuevo?: number;
+  usuario: string;
+  fechaHora: string;
+  motivo?: string;
+}
+
 export type ProductVentaType = 'POR_KILO' | 'POR_UNIDAD' | 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO';
 
 export type StockControlType = 'UNIDADES_Y_KILOS' | 'SOLO_KILOS' | 'SOLO_UNIDADES' | 'UNIDADES_INFORMATIVAS_COBRO_POR_KILO';
@@ -143,6 +182,10 @@ export interface Customer {
   diasTopeCredito: number; // Días máximos de plazo
   observaciones: string;
   listaPrecioTipo?: PriceListType;
+  priceListId?: string;
+  archivado?: boolean;
+  archivadoAt?: string;
+  archivadoPor?: string;
   preciosPersonalizados?: Record<string, number>;
   sucursales?: CustomerBranch[];
   condicionesComerciales?: string;
@@ -277,7 +320,9 @@ export interface VirtualBoleta {
   branchName?: string;
   fechaHora: string;
   registradoPor: string;
-  listaPrecioAplicada: PriceListType | 'PERSONALIZADA';
+  listaPrecioAplicada: string;
+  priceListId?: string;
+  priceListName?: string;
   items: BoletaItem[];
   subtotal: number;
   descuento: number;

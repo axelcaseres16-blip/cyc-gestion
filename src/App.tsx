@@ -38,6 +38,7 @@ import { SystemAuditScreen } from './components/SystemAuditScreen';
 import { DriverPanelScreen } from './components/DriverPanelScreen';
 import { AlertCenterScreen } from './components/AlertCenterScreen';
 import { ShiftStateScreen } from './components/ShiftStateScreen';
+import { PriceListsScreen } from './components/PriceListsScreen';
 import { AnulacionModal } from './components/AnulacionModal';
 
 import { CustomerModal } from './components/CustomerModal';
@@ -53,6 +54,7 @@ import { OfflineSyncModal } from './components/OfflineSyncModal';
 import { initConnectivitySyncListeners, runFullSyncProcess } from './utils/syncEngine';
 import { idbGetPendingQueueItems } from './utils/indexedDBEngine';
 import { recoverPendingVirtualBoletaCancellations } from './utils/stockAndBoletasManager';
+import { getStoredPriceLists } from './utils/priceListsManager';
 import { PendingSaleRecoveryModal } from './components/PendingSaleRecoveryModal';
 import { VirtualBoletaModal } from './components/VirtualBoletaModal';
 import {
@@ -321,6 +323,7 @@ export default function App() {
   }).length;
 
   const availableRoutes = Array.from(new Set(customers.map((c) => c.zonaRuta))).filter(Boolean);
+  const operationalCustomers = customers.filter((customer) => !customer.archivado);
   const activityLogs = getActivityLogs();
   const reminders = getSmartReminders(customers, movements, visits);
 
@@ -387,7 +390,7 @@ export default function App() {
         <ErrorBoundary key={activeView} onReset={() => setActiveView('finalizarventa')}>
           {activeView === 'finalizarventa' && (
             <VirtualBoletaScreen
-              customers={customers}
+              customers={operationalCustomers}
               onSaleCompleted={refreshData}
               currentUser={currentUser}
               preselectedCustomer={preselectedCustomerForSale}
@@ -399,7 +402,7 @@ export default function App() {
 
           {activeView === 'boletavirtual' && (
             <VirtualBoletaScreen
-              customers={customers}
+              customers={operationalCustomers}
               onSaleCompleted={refreshData}
               currentUser={currentUser}
               preselectedCustomer={preselectedCustomerForSale}
@@ -421,7 +424,7 @@ export default function App() {
           {activeView === 'repartidorpanel' && (
             <DriverPanelScreen
               currentUser={currentUser}
-              customers={customers}
+              customers={operationalCustomers}
               movements={movements}
               onNavigateTo={(view) => setActiveView(view)}
               onStartSale={(cust) => handleStartSaleForCustomer(cust || customers[0])}
@@ -432,7 +435,7 @@ export default function App() {
           {activeView === 'estadoreparto' && (
             <ShiftStateScreen
               currentUser={currentUser}
-              customers={customers}
+              customers={operationalCustomers}
               movements={movements}
               visits={visits}
               onRefreshData={refreshData}
@@ -454,7 +457,7 @@ export default function App() {
 
           {activeView === 'hoy' && (
             <HoyRepartidorScreen
-              customers={customers}
+              customers={operationalCustomers}
               movements={movements}
               visits={visits}
               reminders={reminders}
@@ -477,6 +480,10 @@ export default function App() {
               onGoToCobranzas={() => setActiveView('cobranzas')}
               onGoToClientes={() => setActiveView('clientes')}
             />
+          )}
+
+          {activeView === 'listasprecios' && currentUser.role !== 'REPARTIDOR' && (
+            <PriceListsScreen currentUser={currentUser} customers={customers} onRefreshData={refreshData} />
           )}
 
           {activeView === 'cobranzas' && currentUser.role !== 'REPARTIDOR' && (
@@ -516,6 +523,7 @@ export default function App() {
                 onViewImage={(url, title) =>
                   setImageViewerData({ isOpen: true, imageUrl: url, title })
                 }
+                onRefreshData={refreshData}
               />
             ) : (
               <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center space-y-4 max-w-md mx-auto my-12 shadow-sm">
@@ -573,13 +581,14 @@ export default function App() {
         onSave={handleSaveCustomer}
         initialCustomer={editingCustomer}
         availableRoutes={availableRoutes}
+        priceLists={getStoredPriceLists()}
       />
 
       <RegisterBoletaModal
         isOpen={isBoletaModalOpen}
         onClose={() => setIsBoletaModalOpen(false)}
         onSave={handleSaveBoleta}
-        customers={customers}
+        customers={operationalCustomers}
         preselectedCustomerId={preselectedCustomerIdForModal}
         currentUserRole={currentUser.role}
       />
@@ -615,6 +624,7 @@ export default function App() {
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         onTemplatesUpdated={refreshData}
+        currentUser={currentUser}
       />
 
       <DataBackupModal

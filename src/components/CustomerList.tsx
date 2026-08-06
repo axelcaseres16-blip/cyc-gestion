@@ -38,6 +38,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
   const [selectedRoute, setSelectedRoute] = useState('TODAS');
   const [selectedRisk, setSelectedRisk] = useState('TODOS');
   const [selectedCategory, setSelectedCategory] = useState('TODAS');
+  const [showArchived, setShowArchived] = useState(false);
 
   const availableRoutes = Array.from(new Set(customers.map((c) => c.zonaRuta))).filter(Boolean);
 
@@ -59,7 +60,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
       (selectedRisk === 'SOLO_DEUDORES' && c.saldoActual > 0) ||
       level === selectedRisk;
 
-    return matchesSearch && matchesRoute && matchesCategory && matchesRisk;
+    return matchesSearch && matchesRoute && matchesCategory && matchesRisk && (showArchived ? true : !c.archivado);
   });
 
   return (
@@ -134,6 +135,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
             </select>
           </div>
         </div>
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-600"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />Mostrar clientes archivados (sólo consulta y reactivación)</label>
       </div>
 
       {/* Grid de Tarjetas de Clientes (No tablas para máxima comodidad táctil) */}
@@ -268,7 +270,8 @@ export const CustomerList: React.FC<CustomerListProps> = ({
                 </div>
 
                 {/* Botones de Acción Inmediata en Tarjeta */}
-                <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-3">
+                <div className={`grid ${cust.archivado ? 'grid-cols-1' : 'grid-cols-3'} gap-2 border-t border-slate-100 pt-3`}>
+                  {!cust.archivado && <>
                   <a
                     href={buildWhatsAppDebtMessageUrl(cust)}
                     target="_blank"
@@ -287,6 +290,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
                     <DollarSign className="w-3.5 h-3.5" />
                     <span>Cobrar</span>
                   </button>
+                  </>}
 
                   <button
                     onClick={() => onSelectCustomer(cust.id)}
