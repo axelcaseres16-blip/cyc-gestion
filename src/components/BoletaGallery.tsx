@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Movement, CustomerWithBalance } from '../types';
 import { formatDate, formatCurrency } from '../utils/formatters';
-import { getPersistedVirtualBoletaImageUrl } from '../utils/virtualBoletaImageStorage';
+import {
+  getPersistedVirtualBoletaImageUrl,
+  recoverVirtualBoletaImageById,
+} from '../utils/virtualBoletaImageStorage';
 import { saveInvoiceImage, shareInvoiceImage } from '../utils/imageShare';
 import { Camera, Search, Eye, Download, Share2 } from 'lucide-react';
 
@@ -10,11 +13,12 @@ interface BoletaGalleryProps {
   customers: CustomerWithBalance[];
   onViewImage: (imageUrl: string, title: string) => void;
   onSelectCustomer: (customerId: string) => void;
+  onRefreshData: () => void;
 }
 
 interface GalleryBoleta {
   id: string;
-  imageUrl: string;
+  imageUrl?: string;
   customerId: string;
   numeroBoleta?: string;
   fecha: string;
@@ -22,6 +26,8 @@ interface GalleryBoleta {
   descripcion: string;
   registradoPor: string;
   isVirtual: boolean;
+  boletaVirtualId?: string;
+  needsImageRecovery: boolean;
   isAnulada?: boolean;
 }
 
@@ -51,9 +57,11 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
   customers,
   onViewImage,
   onSelectCustomer,
+  onRefreshData,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [persistedImageUrls, setPersistedImageUrls] = useState<Record<string, string>>({});
+  const [recoveringBoletaId, setRecoveringBoletaId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -90,7 +98,8 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
         const imageUrl = movement.imageId
           ? persistedImageUrls[movement.imageId]
           : movement.fotoUrl;
-        if (!imageUrl) return [];
+        const isVirtual = Boolean(movement.boletaVirtualId);
+        if (!imageUrl && !isVirtual) return [];
         return [{
           id: movement.id,
           imageUrl,
@@ -100,7 +109,9 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
           monto: movement.monto,
           descripcion: movement.descripcion,
           registradoPor: movement.registradoPor,
-          isVirtual: Boolean(movement.boletaVirtualId && movement.imageId),
+          isVirtual,
+          boletaVirtualId: movement.boletaVirtualId,
+          needsImageRecovery: isVirtual && !imageUrl,
           isAnulada: movement.isAnulado,
         }];
       })
@@ -120,6 +131,7 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
   });
 
   const handleShare = async (boleta: GalleryBoleta) => {
+    if (!boleta.imageUrl) return;
     try {
       const imageBlob = await (await fetch(boleta.imageUrl)).blob();
       const imageFile = new File([imageBlob], `Boleta-CYC-${boleta.numeroBoleta || boleta.id}.png`, { type: 'image/png' });
@@ -133,6 +145,24 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
       console.error('No se pudo compartir la imagen de la boleta:', error);
     }
     await saveImage(boleta.imageUrl, boleta.numeroBoleta);
+  };
+
+  const handleRecoverImage = async (boleta: GalleryBoleta) => {
+    if (!boleta.boletaVirtualId) return;
+    setRecoveringBoletaId(boleta.boletaVirtualId);
+    try {
+      const result = await recoverVirtualBoletaImageById(boleta.boletaVirtualId);
+      if (!result || result.status === 'ERROR') {
+        alert(result?.error || 'No se encontró la boleta virtual para recuperar el comprobante.');
+        return;
+      }
+      if (result.imageUrl) {
+        setPersistedImageUrls((current) => ({ ...current, [result.boleta.imageId!]: result.imageUrl! }));
+      }
+      onRefreshData();
+    } finally {
+      setRecoveringBoletaId(null);
+    }
   };
 
   return (
@@ -172,11 +202,13 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
             const title = `Boleta ${boleta.numeroBoleta || ''} - ${customer ? customer.alias || customer.nombre : ''}`;
             return (
               <div key={`${boleta.isVirtual ? 'virtual' : 'fisica'}-${boleta.id}`} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between group">
-                <div className="relative aspect-3/4 bg-slate-100 overflow-hidden cursor-pointer" onClick={() => onViewImage(boleta.imageUrl, title)}>
-                  <img src={boleta.imageUrl} alt={`Boleta ${boleta.numeroBoleta}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
-                    <span className="flex items-center space-x-1 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-white/20"><Eye className="w-4 h-4" /><span>Ver comprobante</span></span>
-                  </div>
+                <div className={`relative aspect-3/4 bg-slate-100 overflow-hidden ${boleta.imageUrl ? 'cursor-pointer' : ''}`} onClick={() => boleta.imageUrl && onViewImage(boleta.imageUrl, title)}>
+                  {boleta.imageUrl ? <>
+                    <img src={boleta.imageUrl} alt={`Boleta ${boleta.numeroBoleta}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                      <span className="flex items-center space-x-1 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-white/20"><Eye className="w-4 h-4" /><span>Ver comprobante</span></span>
+                    </div>
+                  </> : <div className="h-full flex flex-col items-center justify-center gap-3 p-5 text-center text-slate-600"><Camera className="w-10 h-10 text-amber-500" /><p className="text-xs font-black">Comprobante pendiente de generar</p><button onClick={(event) => { event.stopPropagation(); void handleRecoverImage(boleta); }} disabled={recoveringBoletaId === boleta.boletaVirtualId} className="rounded-lg bg-amber-500 px-3 py-2 text-[10px] font-black text-white disabled:opacity-60">{recoveringBoletaId === boleta.boletaVirtualId ? 'Generando…' : 'Generar y guardar comprobante'}</button></div>}
                   <span className="absolute top-2 left-2 bg-slate-900/80 text-white font-mono font-bold text-[10px] px-2 py-0.5 rounded-md backdrop-blur-xs">{boleta.numeroBoleta || 'S/N'}</span>
                   <span className={`absolute top-2 right-2 text-[9px] font-black px-2 py-0.5 rounded-md ${boleta.isVirtual ? 'bg-blue-600 text-white' : 'bg-amber-400 text-amber-950'}`}>{boleta.isVirtual ? 'BOLETA VIRTUAL' : 'BOLETA FÍSICA'}</span>
                   {boleta.isAnulada && <span className="absolute bottom-2 left-2 bg-red-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md">ANULADA</span>}
@@ -189,11 +221,11 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
                     </div>
                     <span className="font-mono font-black text-sm text-red-600">{formatCurrency(boleta.monto)}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5 text-[10px] font-bold">
+                  {boleta.imageUrl ? <div className="grid grid-cols-3 gap-1.5 text-[10px] font-bold">
                     <button onClick={() => onViewImage(boleta.imageUrl, title)} className="flex items-center justify-center gap-1 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50"><Eye className="w-3 h-3" />Ver</button>
                     <button onClick={() => handleShare(boleta)} className="flex items-center justify-center gap-1 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50"><Share2 className="w-3 h-3" />Compartir</button>
                     <button onClick={() => { void saveImage(boleta.imageUrl, boleta.numeroBoleta); }} className="flex items-center justify-center gap-1 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50"><Download className="w-3 h-3" />Guardar</button>
-                  </div>
+                  </div> : <p className="text-[10px] font-bold text-amber-700">La venta está registrada; falta sólo el PNG.</p>}
                 </div>
               </div>
             );

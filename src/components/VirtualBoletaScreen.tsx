@@ -17,7 +17,7 @@ import {
 } from '../utils/stockAndBoletasManager';
 import { getPriceFromList, getStoredPriceLists, savePriceList } from '../utils/priceListsManager';
 import { generateBoletaImage } from '../utils/boletaImageGenerator';
-import { persistVirtualBoletaImage } from '../utils/virtualBoletaImageStorage';
+import { markVirtualBoletaImagePending, persistVirtualBoletaImage } from '../utils/virtualBoletaImageStorage';
 import {
   saveSaleDraft,
   getSaleDraft,
@@ -460,6 +460,10 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       await persistVirtualBoletaImage(virtualBoleta, generatedImageUrl, movementBoleta.id);
     } catch (err) {
       console.error('Error generando imagen de boleta:', err);
+      const message = err instanceof Error ? err.message : 'No se pudo generar el comprobante.';
+      await markVirtualBoletaImagePending(virtualBoleta, movementBoleta.id, message).catch((pendingError) => {
+        console.error('Error marcando comprobante pendiente:', pendingError);
+      });
     }
 
     clearSaleDraft();

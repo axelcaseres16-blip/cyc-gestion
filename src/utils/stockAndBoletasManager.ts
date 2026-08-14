@@ -648,6 +648,11 @@ export function finalizeVirtualBoleta(params: {
     saldoAnteriorCuenta,
     nuevoSaldoCuenta,
     fotoBoletaFisicaUrl: params.fotoBoletaFisicaUrl,
+    imageId: `virtual_boleta_${boletaId}`,
+    imageFileName: `Boleta-CYC-${params.numeroBoleta}.png`,
+    imageMimeType: 'image/png',
+    hasGeneratedImage: false,
+    imageStatus: 'IMAGE_PENDING',
     sincronizado: true,
   };
 
@@ -673,8 +678,16 @@ export function finalizeVirtualBoleta(params: {
     registradoPor: params.usuario,
     createdAt: nowIso,
     boletaVirtualId: boletaId,
+    imageId: virtualBoleta.imageId,
+    hasAttachment: false,
   };
   newMovements.push(movementBoleta);
+
+  // El vínculo estable se persiste antes de generar el PNG. Si la app se cierra
+  // o el canvas falla, la venta sigue siendo recuperable sin repetir movimientos.
+  virtualBoleta.movementIdPrincipal = movementBoleta.id;
+  virtualBoletas[0] = virtualBoleta;
+  saveVirtualBoletas(virtualBoletas);
 
   // B. Movement PAGO Efectivo
   if (params.pagoEfectivo > 0) {

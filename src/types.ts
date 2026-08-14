@@ -341,6 +341,8 @@ export interface VirtualBoleta {
   imageFileName?: string;
   imageMimeType?: 'image/png';
   hasGeneratedImage?: boolean;
+  imageStatus?: 'IMAGE_PENDING' | 'GUARDADA';
+  imageLastError?: string;
   movementIdPrincipal?: string;
   observacionesDocUrl?: string;
   sincronizado: boolean;

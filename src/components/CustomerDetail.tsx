@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CustomerWithBalance, Movement, CustomerVisit, WhatsAppTemplates, TimelineItem } from '../types';
 import {
   formatCurrency,
@@ -11,7 +11,10 @@ import {
 import { getCustomerTimeline, getActivityLogs, addActivityLog } from '../utils/storage';
 import { archiveCustomer, deleteCustomerIfEmpty, getCustomerHistorySummary, reactivateCustomer } from '../utils/storage';
 import { assignCustomersToPriceList, createExclusivePriceList, getStoredPriceLists } from '../utils/priceListsManager';
-import { getPersistedVirtualBoletaImageUrl } from '../utils/virtualBoletaImageStorage';
+import {
+  getPersistedVirtualBoletaImageUrl,
+  recoverVirtualBoletaImageById,
+} from '../utils/virtualBoletaImageStorage';
 import {
   ArrowLeft,
   Edit,
@@ -74,6 +77,8 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
   const [movementFilter, setMovementFilter] = useState<string>('TODOS');
   const [showDeletion, setShowDeletion] = useState(false);
   const [deletionReason, setDeletionReason] = useState('');
+  const [resolvedVirtualImages, setResolvedVirtualImages] = useState<Record<string, boolean>>({});
+  const [recoveringBoletaId, setRecoveringBoletaId] = useState<string | null>(null);
 
   if (!customer) {
     return (
@@ -102,6 +107,31 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
   const customerMovements = safeMovements
     .filter((m) => m && m.customerId === customer.id)
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
+  useEffect(() => {
+    let active = true;
+    const objectUrls: string[] = [];
+    const loadImageAvailability = async () => {
+      const boletas = safeMovements.filter(
+        (movement) => movement.customerId === customer.id && movement.tipo === 'BOLETA' && movement.boletaVirtualId
+      );
+      const entries = await Promise.all(
+        boletas.map(async (movement) => {
+          const imageUrl = movement.imageId
+            ? await getPersistedVirtualBoletaImageUrl(movement.imageId)
+            : null;
+          if (imageUrl?.startsWith('blob:')) objectUrls.push(imageUrl);
+          return [movement.id, Boolean(imageUrl || movement.fotoUrl)] as const;
+        })
+      );
+      if (active) setResolvedVirtualImages(Object.fromEntries(entries));
+    };
+    void loadImageAvailability();
+    return () => {
+      active = false;
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [customer.id, movements]);
 
   const filteredMovements = customerMovements.filter((m) => {
     if (movementFilter === 'BOLETA') return m.tipo === 'BOLETA';
@@ -150,6 +180,20 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
   const handleViewMovementImage = async (imageId: string | undefined, fallbackUrl: string | undefined, title: string) => {
     const imageUrl = imageId ? await getPersistedVirtualBoletaImageUrl(imageId) : fallbackUrl;
     if (imageUrl) onViewImage(imageUrl, title);
+  };
+
+  const handleRecoverMovementImage = async (boletaVirtualId: string) => {
+    setRecoveringBoletaId(boletaVirtualId);
+    try {
+      const result = await recoverVirtualBoletaImageById(boletaVirtualId);
+      if (!result || result.status === 'ERROR') {
+        alert(result?.error || 'No se encontró la boleta virtual para recuperar el comprobante.');
+        return;
+      }
+      onRefreshData();
+    } finally {
+      setRecoveringBoletaId(null);
+    }
   };
 
   return (
@@ -459,16 +503,26 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
 
                         <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400">
                           <span>Registrado por: <strong>{item.usuario}</strong></span>
-                          {item.hasAttachment && (
+                          {item.hasAttachment && resolvedVirtualImages[item.id] && (
                             <span className="text-emerald-700 font-bold flex items-center space-x-1"><CheckCircle2 className="w-3 h-3" /><span>Imagen guardada</span></span>
                           )}
-                          {(item.fotoUrl || item.imageId) && (
+                          {(item.fotoUrl || resolvedVirtualImages[item.id]) && (
                             <button
                               onClick={() => handleViewMovementImage(item.imageId, item.fotoUrl, item.titulo)}
                               className="text-blue-600 font-bold hover:underline flex items-center space-x-1"
                             >
                               <Camera className="w-3 h-3" />
                               <span>Ver comprobante</span>
+                            </button>
+                          )}
+                          {item.tipoItem === 'BOLETA' && item.boletaVirtualId && !item.fotoUrl && !resolvedVirtualImages[item.id] && (
+                            <button
+                              onClick={() => { void handleRecoverMovementImage(item.boletaVirtualId!); }}
+                              disabled={recoveringBoletaId === item.boletaVirtualId}
+                              className="text-amber-700 font-bold hover:underline disabled:opacity-60 flex items-center space-x-1"
+                            >
+                              <Camera className="w-3 h-3" />
+                              <span>{recoveringBoletaId === item.boletaVirtualId ? 'Generando comprobante…' : 'Generar comprobante'}</span>
                             </button>
                           )}
                         </div>
@@ -489,6 +543,15 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
                 <div>
                   <p className="font-bold text-xs text-slate-900">{mov.tipo} - {formatDate(mov.fecha, true)}</p>
                   <p className="text-[11px] text-slate-600">{mov.descripcion}</p>
+                  {mov.tipo === 'BOLETA' && mov.boletaVirtualId && (
+                    <div className="mt-1.5">
+                      {(mov.fotoUrl || resolvedVirtualImages[mov.id]) ? (
+                        <button onClick={() => handleViewMovementImage(mov.imageId, mov.fotoUrl, `Boleta ${mov.numeroBoleta || ''}`)} className="text-[10px] font-bold text-blue-700 hover:underline">Ver comprobante</button>
+                      ) : (
+                        <button onClick={() => { void handleRecoverMovementImage(mov.boletaVirtualId!); }} disabled={recoveringBoletaId === mov.boletaVirtualId} className="text-[10px] font-bold text-amber-700 hover:underline disabled:opacity-60">{recoveringBoletaId === mov.boletaVirtualId ? 'Generando comprobante…' : 'Generar comprobante'}</button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <span className={`font-mono font-bold text-sm ${mov.esDebito ? 'text-red-600' : 'text-emerald-600'}`}>
                   {mov.esDebito ? '+' : '-'}{formatCurrency(mov.monto)}

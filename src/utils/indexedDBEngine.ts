@@ -516,6 +516,19 @@ export async function idbSaveEntity<T extends { id: string }>(
   }
 }
 
+/** Persiste un comprobante y propaga el error para que la venta pueda quedar marcada como pendiente. */
+export async function idbSaveImageBlobStrict(entry: ImageBlobEntry): Promise<void> {
+  const db = await initIndexedDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('imageBlobs', 'readwrite');
+    const store = tx.objectStore('imageBlobs');
+    const req = store.put(entry);
+    req.onerror = () => reject(req.error || new Error('No se pudo guardar el comprobante en IndexedDB.'));
+    tx.onabort = () => reject(tx.error || new Error('La transacción de comprobante fue abortada.'));
+    tx.oncomplete = () => resolve();
+  });
+}
+
 export async function idbGetImageBlob(imageId: string): Promise<ImageBlobEntry | null> {
   try {
     const db = await initIndexedDB();

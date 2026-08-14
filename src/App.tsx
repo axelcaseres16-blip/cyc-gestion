@@ -54,6 +54,7 @@ import { OfflineSyncModal } from './components/OfflineSyncModal';
 import { initConnectivitySyncListeners, runFullSyncProcess } from './utils/syncEngine';
 import { idbGetPendingQueueItems } from './utils/indexedDBEngine';
 import { recoverPendingVirtualBoletaCancellations } from './utils/stockAndBoletasManager';
+import { recoverPendingVirtualBoletaImages } from './utils/virtualBoletaImageStorage';
 import { getStoredPriceLists } from './utils/priceListsManager';
 import { PendingSaleRecoveryModal } from './components/PendingSaleRecoveryModal';
 import { VirtualBoletaModal } from './components/VirtualBoletaModal';
@@ -112,6 +113,7 @@ export default function App() {
 
     const recoverStartupOperations = async () => {
       const cancellationRecovery = await recoverPendingVirtualBoletaCancellations();
+      const imageRecovery = await recoverPendingVirtualBoletaImages();
       const pending = await idbGetPendingQueueItems();
       const messages: string[] = [];
 
@@ -124,6 +126,13 @@ export default function App() {
       }
       if (pending.length > 0) {
         messages.push(`Se recuperaron ${pending.length} operación(es) offline pendientes.`);
+      }
+      if (imageRecovery.recoveredCount > 0 || imageRecovery.errors.length > 0) {
+        messages.push(
+          imageRecovery.errors.length > 0
+            ? 'Hay comprobantes pendientes de generar que se podrán recuperar desde la ficha del cliente.'
+            : `Se recuperó ${imageRecovery.recoveredCount} comprobante(s) pendiente(s).`
+        );
       }
       if (messages.length > 0) setStartupRecoveryBanner(`⚡ ${messages.join(' ')}`);
 
@@ -565,6 +574,7 @@ export default function App() {
                 setImageViewerData({ isOpen: true, imageUrl: url, title })
               }
               onSelectCustomer={handleSelectCustomer}
+              onRefreshData={refreshData}
             />
           )}
 
