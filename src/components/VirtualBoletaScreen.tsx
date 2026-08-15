@@ -499,25 +499,25 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     value > 0 ? `$${value.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—';
 
   return (
-    <div className="max-w-7xl mx-auto space-y-4 pb-10">
+    <div className="cc-page space-y-4">
       {/* Header Banner */}
-      <div className="border-b-2 border-slate-900 pb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div className="cc-page-header mb-1">
         <div>
           <div className="flex items-center space-x-2">
-            <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-black uppercase px-2.5 py-0.5 flex items-center gap-1">
+            <span className="cc-badge cc-badge-success">
               <Zap className="w-3.5 h-3.5" /> Módulo Express
             </span>
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
+            <h1 className="cc-page-title">
               Boleta Virtual C&C
             </h1>
           </div>
-          <p className="text-xs sm:text-sm text-slate-600 mt-1">
+          <p className="cc-page-subtitle">
             Generación de comprobante digital, cálculo automático por lista de precios y descuento de stock semanal.
           </p>
         </div>
 
         {restoredDraftNotice && (
-          <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs px-3 py-1.5 flex items-center space-x-2">
+          <div className="cc-badge cc-badge-warning self-center sm:self-auto">
             <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
             <span>Borrador autoguardado recuperado</span>
           </div>
@@ -525,8 +525,8 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       </div>
 
       {/* 1. SELECCIÓN DE CLIENTE Y SUCURSAL */}
-      <section className="border-b border-slate-300 pb-4 space-y-4">
-        <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center space-x-2">
+      <section className="cc-card space-y-3 p-3.5 sm:p-4">
+        <h2 className="cc-section-label flex items-center space-x-2">
           <UserCheck className="w-5 h-5 text-blue-600" />
           <span>1. Selección de Cliente y Condición de Venta</span>
         </h2>
@@ -540,11 +540,12 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                 placeholder="Buscar cliente por nombre, fantasía, dirección o zona..."
                 value={customerSearchQuery}
                 onChange={(e) => setCustomerSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 text-sm font-medium"
+                className="cc-input pl-10"
+                inputMode="search"
               />
             </div>
 
-            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+            <div className="cc-scrollbar max-h-72 overflow-y-auto space-y-1.5 pr-1">
               {customers
                 .filter(
                   (c) => !c.archivado && (
@@ -557,7 +558,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                   <div
                     key={cust.id}
                     onClick={() => setSelectedCustomer(cust)}
-                    className="p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 transition cursor-pointer flex items-center justify-between"
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 transition hover:border-blue-300 hover:bg-blue-50/50 active:bg-blue-50"
                   >
                     <div>
                       <p className="font-extrabold text-slate-900 text-sm">
@@ -578,7 +579,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
             </div>
           </div>
         ) : (
-          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+          <div className="rounded-xl border border-blue-100 bg-blue-50/55 p-3.5 space-y-3">
             <div className="flex items-start justify-between">
               <div>
                 <span className="text-[10px] uppercase font-black tracking-wider text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
@@ -593,7 +594,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
               </div>
               <button
                 onClick={() => setSelectedCustomer(null)}
-                className="text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-200 hover:bg-slate-300 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                className="cc-btn cc-btn-secondary min-h-9 px-3 py-1.5 text-xs"
               >
                 Cambiar Cliente
               </button>
@@ -624,20 +625,20 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
             )}
 
             {/* Commercial Info Strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-2 border-t border-slate-200/80">
-              <div className="bg-white p-2 rounded-lg border border-slate-200">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-2 border-t border-blue-100">
+              <div className="rounded-lg border border-slate-200 bg-white p-2">
                 <span className="text-slate-500 font-bold block">Lista Asignada:</span>
                 <span className="font-black text-slate-900">{activePriceList?.nombre || 'Sin lista asignada'}</span>
               </div>
-              <div className="bg-white p-2 rounded-lg border border-slate-200">
+              <div className="rounded-lg border border-slate-200 bg-white p-2">
                 <span className="text-slate-500 font-bold block">Saldo Actual Cuenta:</span>
                 <span className="font-black text-slate-900">{formatCurrency(selectedCustomer.saldoActual)}</span>
               </div>
-              <div className="bg-white p-2 rounded-lg border border-slate-200">
+              <div className="rounded-lg border border-slate-200 bg-white p-2">
                 <span className="text-slate-500 font-bold block">Forma Pago Habitual:</span>
                 <span className="font-black text-slate-900">{selectedCustomer.formaPagoHabitual || 'DEBE'}</span>
               </div>
-              <div className="bg-white p-2 rounded-lg border border-slate-200">
+              <div className="rounded-lg border border-slate-200 bg-white p-2">
                 <span className="text-slate-500 font-bold block">Contacto:</span>
                 <span className="font-bold text-slate-900 truncate block">{selectedCustomer.telefono || 'Sin tel'}</span>
               </div>
@@ -666,7 +667,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       </section>
 
       {/* 2. DETALLE DE PRODUCTOS */}
-      <section className="border-y border-slate-300 py-3 sm:py-4 space-y-3">
+      <section className="cc-card space-y-3 p-3 sm:p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
@@ -716,8 +717,8 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
           </div>
         )}
 
-        <div className="overflow-hidden border border-slate-300">
-          <table className="w-full table-fixed border-collapse text-[10px] sm:text-xs">
+        <div className="overflow-hidden rounded-xl border border-slate-200">
+          <table className="w-full table-fixed border-collapse text-[11px] sm:text-xs">
             <colgroup>
               <col className="w-[39%]" />
               <col className="w-[12%]" />
@@ -725,7 +726,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
               <col className="w-[18%]" />
               <col className="w-[19%]" />
             </colgroup>
-            <thead className="bg-slate-900 text-white uppercase tracking-wide text-[8px] sm:text-[10px]">
+            <thead className="bg-[#0f1d35] text-white uppercase tracking-wide text-[8px] sm:text-[10px]">
               <tr>
                 <th className="px-1 py-1.5 text-left sm:px-3">Prod.</th>
                 <th className="px-0.5 py-1.5 text-center sm:px-2">Und.</th>
@@ -746,16 +747,16 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
                   <tr
                     key={product?.id || rowName}
                     onClick={() => !hasPrice && setUnpricedProductNotice(`${rowName} no tiene precio en la lista ${activePriceList?.nombre || 'sin lista'}.${isDuenoOrAdmin ? ' Configuralo desde Administrar productos.' : ''}`)}
-                    className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} h-11 ${!hasPrice ? 'cursor-pointer' : ''}`}
+                    className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'} h-[52px] ${!hasPrice ? 'cursor-pointer' : ''}`}
                   >
                     <td className="break-words px-1 py-1 font-bold leading-tight text-slate-800 sm:px-3">
                       {rowName}
                     </td>
                     <td className="p-0.5 sm:p-1">
-                      <input disabled={!hasPrice} value={item?.unidadesInput || ''} onChange={(e) => product && updateProductItem(product.id, 'unidadesInput', e.target.value)} inputMode="decimal" placeholder="0" className="h-7 min-w-0 w-full border border-slate-300 bg-white px-0.5 text-center text-[10px] font-bold text-slate-900 disabled:bg-slate-100 sm:px-2 sm:text-xs" />
+                      <input disabled={!hasPrice} value={item?.unidadesInput || ''} onChange={(e) => product && updateProductItem(product.id, 'unidadesInput', e.target.value)} inputMode="numeric" placeholder="0" aria-label={`Unidades de ${rowName}`} className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-0.5 text-center text-xs font-bold text-slate-900 disabled:bg-slate-100 sm:px-2" />
                     </td>
                     <td className="p-0.5 sm:p-1">
-                      <input disabled={!hasPrice} value={item?.kilajeInput || ''} onChange={(e) => product && updateProductItem(product.id, 'kilajeInput', e.target.value)} inputMode="decimal" placeholder="0" className="h-7 min-w-0 w-full border border-slate-300 bg-white px-0.5 text-center text-[10px] font-bold text-emerald-800 disabled:bg-slate-100 sm:px-2 sm:text-xs" />
+                      <input disabled={!hasPrice} value={item?.kilajeInput || ''} onChange={(e) => product && updateProductItem(product.id, 'kilajeInput', e.target.value)} inputMode="decimal" placeholder="0" aria-label={`Kilos de ${rowName}`} className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-0.5 text-center text-xs font-bold text-emerald-800 disabled:bg-slate-100 sm:px-2" />
                     </td>
                     <td className="whitespace-nowrap px-1 py-1 text-right text-[9px] font-semibold text-slate-600 sm:px-3 sm:text-xs">{hasPrice ? formatTableCurrency(calculation.precioAplicado) : '—'}</td>
                     <td className="whitespace-nowrap px-1 py-1 text-right text-[9px] font-black text-slate-900 sm:px-3 sm:text-xs">{hasPrice ? formatTableCurrency(calculation.subtotal) : '—'}</td>
@@ -1036,7 +1037,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       </div>
 
       {/* FINALIZAR BOTÓN */}
-      <div className="pt-2">
+      <div className="hidden pt-2 md:block">
         <button
           onClick={handleFinalize}
           disabled={!selectedCustomer || totalBoleta <= 0}
@@ -1046,6 +1047,19 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
           <span>FINALIZAR VENTA Y EMITIR BOLETA VIRTUAL</span>
         </button>
       </div>
+
+      {totalBoleta > 0 && (
+        <div className="cc-bottom-action p-2 md:hidden">
+          <button
+            onClick={handleFinalize}
+            disabled={!selectedCustomer}
+            className="flex min-h-[54px] w-full items-center justify-between gap-3 rounded-xl bg-emerald-600 px-4 text-left text-white disabled:opacity-50"
+          >
+            <span><span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-100">{items.filter((item) => Number(item.kilajeInput.replace(',', '.')) > 0 || Number(item.unidadesInput.replace(',', '.')) > 0).length} productos cargados</span><span className="cc-money text-lg font-extrabold">{formatCurrency(totalBoleta)}</span></span>
+            <span className="flex items-center gap-1 text-sm font-extrabold">Finalizar <CheckCircle2 className="h-5 w-5" /></span>
+          </button>
+        </div>
+      )}
 
       {/* RENDER VIRTUAL BOLETA MODAL AFTER COMPLETION */}
       {completedBoleta && (

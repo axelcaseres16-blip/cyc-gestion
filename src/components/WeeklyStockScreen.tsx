@@ -312,9 +312,9 @@ export const WeeklyStockScreen: React.FC<WeeklyStockScreenProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div className="cc-page space-y-4">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="flex flex-col items-start justify-between gap-4 rounded-[20px] border border-slate-800 bg-[#0f1d35] p-4 text-white shadow-lg md:flex-row md:items-center">
         <div>
           <div className="flex items-center space-x-2">
             <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
@@ -366,29 +366,29 @@ export const WeeklyStockScreen: React.FC<WeeklyStockScreenProps> = ({
       </div>
 
       {/* Metric Cards Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <div className="cc-card-compact p-3">
           <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
             Total Productos
           </p>
           <p className="text-2xl font-black text-slate-900 mt-1">{stockSummary.length}</p>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="cc-card-compact p-3">
           <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
             Stock Bajo / Advertencia
           </p>
           <p className="text-2xl font-black text-amber-600 mt-1">{lowStockCount}</p>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="cc-card-compact p-3">
           <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
             Sin Stock (Agotado)
           </p>
           <p className="text-2xl font-black text-red-600 mt-1">{outOfStockCount}</p>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="cc-card-compact p-3">
           <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
             Cargas Matadero
           </p>
@@ -397,7 +397,7 @@ export const WeeklyStockScreen: React.FC<WeeklyStockScreenProps> = ({
       </div>
 
       {/* Tabs Navigation */}
-      <div className="bg-white p-2 rounded-2xl border border-slate-200 flex flex-wrap gap-2">
+      <div className="cc-card flex flex-wrap gap-1.5 p-1.5">
         <button
           onClick={() => setActiveTab('STOCK')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${

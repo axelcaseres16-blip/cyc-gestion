@@ -52,6 +52,7 @@ interface CustomerDetailProps {
   onEditCustomer: (customer: CustomerWithBalance) => void;
   onOpenNewBoleta: (customerId: string) => void;
   onOpenNewPago: (customerId: string) => void;
+  onStartSale: (customer: CustomerWithBalance) => void;
   onOpenNewAjuste: (customerId: string) => void;
   onOpenRegistrarVisita: (customer: CustomerWithBalance) => void;
   onViewImage: (imageUrl: string, title: string) => void;
@@ -68,6 +69,7 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
   onEditCustomer,
   onOpenNewBoleta,
   onOpenNewPago,
+  onStartSale,
   onOpenNewAjuste,
   onOpenRegistrarVisita,
   onViewImage,
@@ -197,7 +199,7 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
   };
 
   return (
-    <div id="customer-detail-container" className="space-y-6 pb-20">
+    <div id="customer-detail-container" className="cc-page space-y-4">
       {/* Botón Volver y Acciones de Encabezado */}
       <div className="flex items-center justify-between">
         <button
@@ -212,7 +214,7 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
       </div>
 
       {/* Profile Header Card */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-6">
+      <div className="cc-card space-y-5 p-4 sm:p-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-6">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -270,7 +272,7 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
           </div>
 
           {/* Bloque Destacado de Saldo Actual */}
-          <div className="bg-slate-900 text-white p-5 rounded-3xl space-y-2 shrink-0 md:min-w-[260px] shadow-lg">
+          <div className="shrink-0 space-y-2 rounded-2xl bg-[#0f1d35] p-4 text-white shadow-lg md:min-w-[230px]">
             <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
               Saldo Pendiente Actual
             </span>
@@ -292,6 +294,13 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
           <p className="text-xs font-black uppercase text-slate-500 tracking-wider">Acciones Rápidas del Cliente</p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+            <button
+              onClick={() => onStartSale(customer)}
+              className="col-span-2 flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-extrabold text-white shadow-sm transition hover:bg-emerald-700 sm:col-span-1"
+            >
+              <Zap className="h-5 w-5" />
+              <span>Nueva venta</span>
+            </button>
             {/* Informar Saldo WhatsApp */}
             <button
               onClick={() => handleWhatsAppClick('SALDO')}
@@ -411,7 +420,7 @@ export const CustomerDetail: React.FC<CustomerDetailProps> = ({
       {showDeletion && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl space-y-4"><div><h2 className="text-lg font-black text-slate-900">Gestionar baja de {customer.alias || customer.nombre}</h2><p className="text-xs text-slate-600">La eliminación definitiva sólo está disponible sin historial y con saldo cero.</p></div><div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs"><p>Sucursales: <strong>{historySummary.sucursales}</strong></p><p>Saldo: <strong>{formatCurrency(historySummary.saldoActual)}</strong></p><p>Movimientos: <strong>{historySummary.movimientos}</strong></p><p>Boletas: <strong>{historySummary.boletas}</strong></p><p>Imágenes: <strong>{historySummary.imagenes}</strong></p><p>Visitas: <strong>{historySummary.visitas}</strong></p></div><input value={deletionReason} onChange={(event) => setDeletionReason(event.target.value)} placeholder="Motivo opcional" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs" /><div className="flex flex-wrap justify-end gap-2"><button onClick={() => setShowDeletion(false)} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold">Cancelar</button>{(!historySummary.tieneHistorial && historySummary.saldoActual === 0) ? <button onClick={handleDelete} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-black text-white"><Trash2 className="mr-1 inline h-4 w-4" />Eliminar definitivamente</button> : <button onClick={handleArchive} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white"><Archive className="mr-1 inline h-4 w-4" />Archivar cliente</button>}</div>{historySummary.saldoActual !== 0 && <p className="text-xs font-bold text-red-700">Tiene saldo pendiente: sólo puede archivarse.</p>}</div></div>}
 
       {/* Tabs para Alternar entre Línea de Tiempo Comercial Única y Tablas */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
+      <div className="cc-card space-y-4 p-4 sm:p-5">
         <div className="flex items-center space-x-2 border-b border-slate-200 pb-3">
           <button
             onClick={() => setActiveTab('TIMELINE')}

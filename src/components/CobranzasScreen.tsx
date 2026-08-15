@@ -61,16 +61,16 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
   const totalCobradoRutaHoy = pagosRutaHoy.reduce((acc, m) => acc + m.monto, 0);
 
   return (
-    <div id="cobranzas-screen-container" className="space-y-6 pb-16">
+    <div id="cobranzas-screen-container" className="cc-page space-y-4">
       {/* Header Banner - Optimizado para cel en camioneta */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 text-white p-5 rounded-2xl shadow-lg border border-slate-700 space-y-4">
+      <div className="rounded-[20px] border border-slate-800 bg-[#0f1d35] p-4 text-white shadow-lg space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-3">
-            <div className="p-3 bg-blue-600/30 rounded-2xl border border-blue-500/40 text-blue-400">
-              <Truck className="w-7 h-7" />
+            <div className="rounded-xl bg-blue-500/15 p-2.5 text-blue-300">
+              <Truck className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight">Modo Cobranzas en Ruta</h1>
+              <h1 className="text-xl font-extrabold tracking-[-0.03em]">Cobranzas</h1>
               <p className="text-xs text-slate-300 font-medium">Gestión ágil de cobros en calle para reparto</p>
             </div>
           </div>
@@ -81,7 +81,7 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
               id="select-cobranza-ruta"
               value={selectedRoute}
               onChange={(e) => setSelectedRoute(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-xs sm:text-sm font-bold text-white rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto"
+              className="min-h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto"
             >
               <option value="TODAS">📍 Todas las Rutas ({customers.length})</option>
               {availableRoutes.map((r) => (
@@ -95,21 +95,21 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
 
         {/* Resumen de Cobranzas del Día */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-700/80">
-          <div className="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+          <div className="rounded-xl border border-slate-700/70 bg-white/5 p-2.5">
             <p className="text-[10px] uppercase font-bold text-slate-400">Pendiente en Ruta</p>
             <p className="text-lg font-black font-mono text-red-400">
               {formatCurrency(totalDeudaRuta)}
             </p>
           </div>
 
-          <div className="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+          <div className="rounded-xl border border-slate-700/70 bg-white/5 p-2.5">
             <p className="text-[10px] uppercase font-bold text-slate-400">Cobrado Hoy</p>
             <p className="text-lg font-black font-mono text-emerald-400">
               {formatCurrency(totalCobradoRutaHoy)}
             </p>
           </div>
 
-          <div className="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50 col-span-2 sm:col-span-1">
+          <div className="col-span-2 rounded-xl border border-slate-700/70 bg-white/5 p-2.5 sm:col-span-1">
             <p className="text-[10px] uppercase font-bold text-slate-400">Clientes Deudores</p>
             <p className="text-lg font-black font-mono text-amber-400">
               {routeDebtors.length} <span className="text-xs font-sans text-slate-400">de {routeCustomers.length}</span>
@@ -144,7 +144,7 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
               return (
                 <div
                   key={cust.id}
-                  className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs hover:border-slate-300 transition space-y-3"
+                className="cc-card-compact space-y-3 p-3.5 transition hover:border-blue-200"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="space-y-1 cursor-pointer" onClick={() => onSelectCustomer(cust.id)}>
@@ -177,9 +177,9 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
                     </div>
 
                     {/* Muestreo de Saldo */}
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-left sm:text-right shrink-0">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-left sm:text-right shrink-0">
                       <p className="text-[10px] uppercase font-bold text-slate-400">Deuda Abierta</p>
-                      <p className="text-xl font-black font-mono text-red-600">
+                      <p className="cc-money text-xl font-extrabold text-red-600">
                         {formatCurrency(cust.saldoActual)}
                       </p>
                     </div>
@@ -189,7 +189,7 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 border-t border-slate-100 pt-3">
                     <button
                       onClick={() => onOpenNewPago(cust.id)}
-                      className="min-h-[48px] py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-xs flex items-center justify-center space-x-1.5 active:scale-95 transition cursor-pointer"
+                      className="cc-btn min-h-[48px] bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
                     >
                       <DollarSign className="w-4.5 h-4.5" />
                       <span>Cobrar Ahora</span>
@@ -197,7 +197,7 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
 
                     <button
                       onClick={() => onOpenNewBoleta(cust.id)}
-                      className="min-h-[48px] py-2.5 px-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black rounded-xl shadow-xs flex items-center justify-center space-x-1.5 active:scale-95 transition cursor-pointer"
+                      className="cc-btn min-h-[48px] bg-blue-600 text-white shadow-sm hover:bg-blue-500"
                     >
                       <FileText className="w-4.5 h-4.5" />
                       <span>+ Boleta</span>
@@ -207,7 +207,7 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
                       href={buildWhatsAppDebtMessageUrl(cust)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="min-h-[48px] py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 flex items-center justify-center space-x-1.5 transition active:scale-95"
+                      className="cc-btn min-h-[48px] border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
                     >
                       <MessageSquare className="w-4.5 h-4.5 text-emerald-600" />
                       <span>WhatsApp</span>
@@ -215,7 +215,7 @@ export const CobranzasScreen: React.FC<CobranzasScreenProps> = ({
 
                     <button
                       onClick={() => onSelectCustomer(cust.id)}
-                      className="min-h-[48px] py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl border border-slate-300 flex items-center justify-center space-x-1 transition active:scale-95 cursor-pointer"
+                      className="cc-btn min-h-[48px] border border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
                     >
                       <span>Ver Ficha</span>
                       <ChevronRight className="w-4 h-4" />

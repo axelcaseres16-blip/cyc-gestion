@@ -64,9 +64,9 @@ export const CustomerList: React.FC<CustomerListProps> = ({
   });
 
   return (
-    <div id="customer-list-container" className="space-y-6 pb-12">
+    <div id="customer-list-container" className="cc-page space-y-4">
       {/* Header and Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+      <div className="cc-page-header mb-0">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             Nómina de Clientes ({filteredCustomers.length})
@@ -79,7 +79,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
         <button
           id="btn-create-customer"
           onClick={onOpenNewCustomer}
-          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs sm:text-sm px-4 py-3 min-h-[48px] rounded-xl shadow-md transition flex items-center justify-center space-x-2 cursor-pointer active:scale-98"
+          className="cc-btn cc-btn-primary shrink-0"
         >
           <PlusCircle className="w-5 h-5" />
           <span>Registrar Nuevo Cliente</span>
@@ -87,7 +87,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
       </div>
 
       {/* Bar de Búsqueda y Filtros */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+      <div className="cc-card space-y-3 p-3.5">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Búsqueda por texto */}
           <div className="relative sm:col-span-2">
@@ -98,7 +98,8 @@ export const CustomerList: React.FC<CustomerListProps> = ({
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Buscar por Nombre, Alias (ej: Don Juan), CUIT, Teléfono o Localidad..."
-              className="w-full pl-10 pr-4 py-2.5 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+              className="cc-input pl-10 text-sm"
+              inputMode="search"
             />
           </div>
 
@@ -108,7 +109,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
               id="filter-route-select"
               value={selectedRoute}
               onChange={(e) => setSelectedRoute(e.target.value)}
-              className="w-full py-2.5 px-3 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="cc-input text-xs"
             >
               <option value="TODAS">📍 Todas las Rutas</option>
               {availableRoutes.map((r) => (
@@ -125,7 +126,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
               id="filter-risk-select"
               value={selectedRisk}
               onChange={(e) => setSelectedRisk(e.target.value)}
-              className="w-full py-2.5 px-3 min-h-[48px] bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="cc-input text-xs"
             >
               <option value="TODOS">⚠️ Todos los Niveles de Riesgo</option>
               <option value="SOLO_DEUDORES">🔴 Solo Clientes con Deuda</option>
@@ -140,13 +141,13 @@ export const CustomerList: React.FC<CustomerListProps> = ({
 
       {/* Grid de Tarjetas de Clientes (No tablas para máxima comodidad táctil) */}
       {filteredCustomers.length === 0 ? (
-        <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 text-slate-500 space-y-3">
+        <div className="cc-card p-10 text-center text-slate-500 space-y-3">
           <AlertCircle className="w-10 h-10 text-slate-400 mx-auto" />
           <p className="font-bold text-slate-800">No se encontraron clientes con los filtros aplicados</p>
           <p className="text-xs text-slate-500">Pruebe limpiando la búsqueda o cambiando de ruta.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
           {filteredCustomers.map((cust) => {
             const level = cust.evaluacionRiesgo.level;
             const isCritical = level === 'CRITICO';
@@ -156,13 +157,13 @@ export const CustomerList: React.FC<CustomerListProps> = ({
             return (
               <div
                 key={cust.id}
-                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:shadow-md hover:border-slate-300 transition flex flex-col justify-between space-y-4"
+                className="cc-card-compact flex flex-col justify-between space-y-3 p-3.5 transition hover:border-blue-200 hover:shadow-sm"
               >
                 {/* Encabezado Tarjeta: Alias + Categoria + Status Badge */}
                 <div className="space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="cursor-pointer" onClick={() => onSelectCustomer(cust.id)}>
-                      <h3 className="font-extrabold text-base text-slate-900 hover:text-blue-600 transition leading-snug">
+                      <h3 className="font-extrabold text-[15px] text-slate-900 hover:text-blue-600 transition leading-snug">
                         {cust.alias || cust.nombre}
                       </h3>
                       {cust.alias && (
@@ -218,11 +219,11 @@ export const CustomerList: React.FC<CustomerListProps> = ({
                 </div>
 
                 {/* Muestreo de Saldo Actual y Estado Crediticio */}
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
+                <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5 space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] uppercase font-bold text-slate-500">Saldo Pendiente</span>
                     <span
-                      className={`text-base font-black font-mono ${
+                      className={`cc-money text-base font-extrabold ${
                         cust.saldoActual > 0 ? 'text-red-600' : 'text-emerald-600'
                       }`}
                     >

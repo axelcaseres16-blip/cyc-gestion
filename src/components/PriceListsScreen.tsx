@@ -121,8 +121,8 @@ export const PriceListsScreen: React.FC<PriceListsScreenProps> = ({ currentUser,
   };
 
   return (
-    <div className="space-y-5 pb-16">
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
+    <div className="cc-page space-y-4">
+      <div className="cc-page-header mb-0">
         <div>
           <h1 className="text-xl font-black text-slate-900">Listas de precios</h1>
           <p className="text-xs font-medium text-slate-500">Precios, asignaciones y cambios comerciales sin alterar boletas emitidas.</p>
@@ -153,7 +153,7 @@ export const PriceListsScreen: React.FC<PriceListsScreenProps> = ({ currentUser,
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <section className="cc-card p-3.5 sm:p-4">
           {!draft || !selectedList ? <p className="p-8 text-center text-sm font-bold text-slate-500">Seleccioná o creá una lista para administrarla.</p> : <div className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 pb-3">
               <div className="flex-1 space-y-2"><input value={draft.nombre} onChange={(event) => setDraft({ ...draft, nombre: event.target.value })} className="w-full border-b border-slate-300 py-1 text-lg font-black text-slate-900" /><input value={draft.descripcion || ''} onChange={(event) => setDraft({ ...draft, descripcion: event.target.value })} placeholder="Descripción opcional" className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs" /></div>

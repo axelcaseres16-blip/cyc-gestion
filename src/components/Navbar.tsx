@@ -1,21 +1,8 @@
 import React, { useState } from 'react';
-import { ConnectionStatusBadge } from './ConnectionStatusBadge';
 import { AppUser } from '../types';
-import {
-  LogOut,
-  Download,
-  Settings,
-  MessageSquare,
-  Zap,
-  Smartphone,
-  ShieldCheck,
-  UserCheck,
-  Truck,
-  User,
-  X,
-  RefreshCw,
-} from 'lucide-react';
-import { promptPwaInstall, checkIsStandalone } from '../utils/pwaManager';
+import { ConnectionStatusBadge } from './ConnectionStatusBadge';
+import { checkIsStandalone, promptPwaInstall } from '../utils/pwaManager';
+import { Download, FilePlus2, LogOut, Menu, MessageSquare, Plus, ReceiptText, Settings, Smartphone, UserRound, X, Zap } from 'lucide-react';
 
 interface NavbarProps {
   activeView: string;
@@ -31,299 +18,57 @@ interface NavbarProps {
   totalDeudaGlobal: number;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({
-  activeView,
-  setActiveView,
-  onOpenNewBoleta,
-  onOpenNewPago,
-  onOpenNewCustomer,
-  onOpenBackupModal,
-  onOpenSettingsModal,
-  onOpenSyncModal,
-  currentUser,
-  onLogout,
-  totalDeudaGlobal,
-}) => {
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const isRepartidor = currentUser.role === 'REPARTIDOR';
-  const isDueno = currentUser.role === 'DUENO';
-
-  const getUserBadge = () => {
-    switch (currentUser.role) {
-      case 'DUENO':
-        return {
-          shortLabel: `👑 ${currentUser.nombre}`,
-          fullLabel: `👑 ${currentUser.nombre} - Dueño`,
-          style: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-        };
-      case 'ADMINISTRADOR':
-        return {
-          shortLabel: `🛠️ ${currentUser.nombre}`,
-          fullLabel: `🛠️ ${currentUser.nombre} - Administrador`,
-          style: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-        };
-      case 'REPARTIDOR':
-        return {
-          shortLabel: `🚚 ${currentUser.nombre}`,
-          fullLabel: `🚚 ${currentUser.nombre} - Repartidor`,
-          style: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-        };
-    }
-  };
-
-  const userBadgeInfo = getUserBadge();
-
-  return (
-    <header id="app-header" className="sticky top-0 z-30 bg-[#0F172A] text-white shadow-md border-b border-slate-800 w-full max-w-full overflow-x-hidden">
-      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 sm:h-16 w-full">
-          {/* Logo y Nombre en Móvil (md:hidden) */}
-          <div
-            className="flex md:hidden items-center space-x-2 cursor-pointer shrink-0 min-w-0"
-            onClick={() => setActiveView(isRepartidor ? 'finalizarventa' : 'dashboard')}
-          >
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center font-black text-white shadow-inner text-base shrink-0">
-              C&C
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center space-x-1.5 min-w-0">
-                <span className="font-black text-sm tracking-tight text-white truncate">C&C Gestión</span>
-                <span className="text-[8px] uppercase font-black tracking-wider bg-amber-400 text-amber-950 px-1.5 py-0.5 rounded-full shrink-0">
-                  Prueba
-                </span>
-                <span className="hidden xs:inline-block text-[9px] uppercase font-bold tracking-wider bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 shrink-0">
-                  Distribuidora
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Título de Sección Activa en Escritorio (hidden md:flex) */}
-          <div className="hidden md:flex items-center space-x-3 shrink-0">
-            <h2 className="text-base lg:text-lg font-black tracking-tight text-white flex items-center space-x-2">
-              <span>{
-                activeView === 'finalizarventa' ? '⚡ Finalizar Venta Express' :
-                activeView === 'dashboard' ? '📊 Dashboard Principal' :
-                activeView === 'hoy' ? '🚚 HOY - Ruta de Reparto' :
-                activeView === 'estadoreparto' ? '🚛 Estado del Reparto / Turno' :
-                activeView === 'clientes' ? '👥 Listado de Clientes' :
-                activeView === 'cobranzas' ? '💵 Gestión de Cobranzas' :
-                activeView === 'cuentacorriente' ? '🧾 Cuentas Corrientes' :
-                activeView === 'boletas' ? '📸 Galería de Boletas' :
-                activeView === 'alertas' ? '🛡️ Centro de Alertas' :
-                activeView === 'auditoria' ? '🔍 Auditoría del Sistema' :
-                activeView === 'usuarios' ? '👑 Administración de Usuarios' :
-                activeView === 'repartidorpanel' ? '🚚 Módulo de Camión' :
-                activeView === 'fichacliente' ? '📄 Ficha de Cliente' : 'C&C Gestión'
-              }</span>
-            </h2>
-            <span className="text-[9px] uppercase font-black tracking-wider bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full">Versión de prueba</span>
-          </div>
-
-          {/* Connection Status Badge (Desktop/Tablet) */}
-          <div className="hidden md:block">
-            <ConnectionStatusBadge onOpenSyncModal={onOpenSyncModal} />
-          </div>
-
-          {/* Quick Stats in Header (Desktop Large) */}
-          {!isRepartidor && (
-            <div className="hidden lg:flex items-center space-x-6 bg-slate-800/80 px-4 py-1.5 rounded-2xl border border-slate-700/60 shrink-0">
-              <div className="text-right">
-                <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Deuda Total en Calle</p>
-                <p className="text-sm font-black text-emerald-400 font-mono">
-                  {totalDeudaGlobal.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* User Badge, Actions & Logout */}
-          <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
-            {/* Botón Principal: Finalizar Venta Express */}
-            <button
-              id="btn-finalizar-venta-nav"
-              onClick={() => setActiveView('finalizarventa')}
-              className={`flex items-center space-x-1 sm:space-x-1.5 text-xs sm:text-sm font-black px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition shadow-md active:scale-95 cursor-pointer min-h-[38px] ${
-                activeView === 'finalizarventa'
-                  ? 'bg-emerald-500 text-slate-950 ring-2 ring-emerald-300'
-                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white'
-              }`}
-              title="Ir a Finalizar Venta Express"
-            >
-              <Zap className="w-4 h-4 fill-current shrink-0" />
-              <span className="text-xs sm:text-sm">Express</span>
-            </button>
-
-            {/* User Badge Button (Desktop: Full label, Mobile: Compact clickable trigger) */}
-            <button
-              id="btn-user-menu-trigger"
-              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-              className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center space-x-1 transition min-h-[38px] cursor-pointer active:scale-95 ${userBadgeInfo.style}`}
-              title="Opciones de Usuario"
-            >
-              <span className="sm:hidden font-extrabold truncate max-w-[85px]">{userBadgeInfo.shortLabel}</span>
-              <span className="hidden sm:inline font-black truncate max-w-[200px]">{userBadgeInfo.fullLabel}</span>
-            </button>
-
-            {/* Desktop-only action buttons */}
-            <div className="hidden sm:flex items-center space-x-2">
-              {/* PWA Install Button */}
-              {!checkIsStandalone() && (
-                <button
-                  id="btn-install-pwa-nav"
-                  onClick={async () => {
-                    const installed = await promptPwaInstall();
-                    if (!installed) {
-                      window.dispatchEvent(new CustomEvent('open-pwa-modal'));
-                    }
-                  }}
-                  className="p-2 text-blue-300 hover:text-white bg-blue-900/40 hover:bg-blue-800/60 rounded-xl transition border border-blue-700/50 flex items-center space-x-1 cursor-pointer min-h-[38px]"
-                  title="Instalar C&C en Pantalla Principal"
-                >
-                  <Smartphone className="w-4.5 h-4.5 text-blue-400" />
-                </button>
-              )}
-
-              {/* Configuración (Solo Admin/Dueño) */}
-              {!isRepartidor && (
-                <button
-                  id="btn-open-settings"
-                  onClick={onOpenSettingsModal}
-                  className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition cursor-pointer min-h-[38px]"
-                  title="Configuración de WhatsApp"
-                >
-                  <MessageSquare className="w-4.5 h-4.5 text-emerald-400" />
-                </button>
-              )}
-
-              {/* Respaldos (Solo Admin/Dueño) */}
-              <button
-                id="btn-open-backup"
-                onClick={onOpenBackupModal}
-                className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition cursor-pointer min-h-[38px]"
-                title="Respaldos y Datos"
-              >
-                <Download className="w-4.5 h-4.5" />
-              </button>
-
-              {/* Botón Cerrar Sesión */}
-              <button
-                id="btn-logout"
-                onClick={onLogout}
-                className="p-2 text-red-300 hover:text-white bg-red-950/60 hover:bg-red-900/80 rounded-xl transition border border-red-800/50 flex items-center space-x-1 cursor-pointer min-h-[38px]"
-                title="Cerrar sesión"
-              >
-                <LogOut className="w-4.5 h-4.5 text-red-400" />
-                <span className="text-xs font-bold hidden xl:inline">Salir</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Popover Menu para Opciones de Usuario (Móvil y Escritorio al hacer click en Badge) */}
-      {isUserMenuOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-end p-3 pt-16 sm:pt-20 bg-slate-950/60 backdrop-blur-xs">
-          <div
-            className="fixed inset-0"
-            onClick={() => setIsUserMenuOpen(false)}
-          />
-          <div className="relative bg-slate-900 border border-slate-700 text-white rounded-2xl p-4 shadow-2xl w-full max-w-xs space-y-3 z-10 animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <div className="min-w-0">
-                <p className="font-extrabold text-sm text-white truncate">{currentUser.nombre}</p>
-                <p className="text-xs text-slate-400 font-medium">{currentUser.role}</p>
-              </div>
-              <button
-                onClick={() => setIsUserMenuOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Deuda Total en Calle */}
-            {!isRepartidor && (
-              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
-                <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Deuda Total en Calle</p>
-                <p className="text-base font-black text-emerald-400 font-mono">
-                  {totalDeudaGlobal.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })}
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              {/* Sincronización */}
-              <button
-                onClick={() => {
-                  setIsUserMenuOpen(false);
-                  onOpenSyncModal();
-                }}
-                className="w-full p-2.5 min-h-[44px] bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center space-x-2 cursor-pointer transition"
-              >
-                <RefreshCw className="w-4 h-4 text-emerald-400" />
-                <span>Estado Sincronización</span>
-              </button>
-
-              {/* PWA App */}
-              {!checkIsStandalone() && (
-                <button
-                  onClick={async () => {
-                    setIsUserMenuOpen(false);
-                    const installed = await promptPwaInstall();
-                    if (!installed) {
-                      window.dispatchEvent(new CustomEvent('open-pwa-modal'));
-                    }
-                  }}
-                  className="w-full p-2.5 min-h-[44px] bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700/50 text-blue-200 text-xs font-bold rounded-xl flex items-center space-x-2 cursor-pointer transition"
-                >
-                  <Smartphone className="w-4 h-4 text-blue-400" />
-                  <span>Instalar App en Celular</span>
-                </button>
-              )}
-
-              {/* Configuración WhatsApp */}
-              {!isRepartidor && (
-                <button
-                  onClick={() => {
-                    setIsUserMenuOpen(false);
-                    onOpenSettingsModal();
-                  }}
-                  className="w-full p-2.5 min-h-[44px] bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center space-x-2 cursor-pointer transition"
-                >
-                  <MessageSquare className="w-4 h-4 text-emerald-400" />
-                  <span>Configurar WhatsApp</span>
-                </button>
-              )}
-
-              {/* Respaldos */}
-              <button
-                onClick={() => {
-                  setIsUserMenuOpen(false);
-                  onOpenBackupModal();
-                }}
-                className="w-full p-2.5 min-h-[44px] bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center space-x-2 cursor-pointer transition"
-              >
-                <Download className="w-4 h-4 text-blue-400" />
-                <span>Respaldos de Datos</span>
-              </button>
-
-              {/* Cerrar Sesión */}
-              <button
-                onClick={() => {
-                  setIsUserMenuOpen(false);
-                  onLogout();
-                }}
-                className="w-full p-2.5 min-h-[44px] bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-200 text-xs font-extrabold rounded-xl flex items-center space-x-2 cursor-pointer transition"
-              >
-                <LogOut className="w-4 h-4 text-red-400" />
-                <span>Cerrar Sesión</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </header>
-  );
+const viewTitles: Record<string, string> = {
+  finalizarventa: 'Express', boletavirtual: 'Express', dashboard: 'Inicio', hoy: 'Ruta de hoy', estadoreparto: 'Estado del día',
+  clientes: 'Clientes', fichacliente: 'Cliente', cobranzas: 'Cobranzas', cuentacorriente: 'Cuenta corriente', boletas: 'Boletas',
+  listasprecios: 'Listas de precios', stocksemanal: 'Stock semanal', alertas: 'Alertas', auditoria: 'Auditoría', usuarios: 'Usuarios', repartidorpanel: 'Mi jornada',
 };
 
+export const Navbar: React.FC<NavbarProps> = ({ activeView, setActiveView, onOpenNewBoleta, onOpenNewPago, onOpenNewCustomer, onOpenBackupModal, onOpenSettingsModal, onOpenSyncModal, currentUser, onLogout, totalDeudaGlobal }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isRepartidor = currentUser.role === 'REPARTIDOR';
+  const initials = currentUser.nombre.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  const pageTitle = viewTitles[activeView] || 'C&C Gestión';
+  const closeThen = (action: () => void) => { setMenuOpen(false); action(); };
+
+  return <header id="app-header" className="sticky top-0 z-30 w-full border-b border-slate-800 bg-[#0f1d35]/98 text-white shadow-[0_2px_14px_rgba(15,29,53,.18)] backdrop-blur">
+    <div className="mx-auto flex h-[calc(3.7rem+env(safe-area-inset-top,0px))] max-w-7xl items-end justify-between gap-3 px-3 pb-2.5 pt-[env(safe-area-inset-top,0px)] sm:px-6">
+      <button onClick={() => setActiveView(isRepartidor ? 'finalizarventa' : 'dashboard')} className="flex min-h-10 min-w-0 items-center gap-2 text-left">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-[13px] font-black tracking-[-0.09em] text-slate-950">C&C</span>
+        <span className="min-w-0"><span className="block truncate text-sm font-extrabold tracking-[-0.025em]">{pageTitle}</span><span className="hidden text-[10px] font-medium text-slate-400 sm:block">C&C Gestión</span></span>
+      </button>
+
+      <div className="flex items-center gap-2">
+        <span className="hidden rounded-full border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-[9px] font-extrabold tracking-[0.08em] text-amber-200 sm:inline">TEST</span>
+        <div className="hidden md:block"><ConnectionStatusBadge onOpenSyncModal={onOpenSyncModal} /></div>
+        <button onClick={() => setMenuOpen(true)} className="flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-xl bg-white/10 px-2 text-xs font-bold text-white transition hover:bg-white/16" aria-label="Abrir opciones">
+          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-500 text-[9px] font-black">{initials}</span><Menu className="h-4 w-4 text-slate-300" />
+        </button>
+      </div>
+    </div>
+
+    {menuOpen && <div className="fixed inset-0 z-50">
+      <button aria-label="Cerrar opciones" onClick={() => setMenuOpen(false)} className="absolute inset-0 h-full w-full bg-slate-950/45 backdrop-blur-[1px]" />
+      <section className="absolute right-3 top-[max(4.25rem,calc(4rem+env(safe-area-inset-top)))] w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-slate-200 bg-white p-3 text-slate-900 shadow-2xl sm:right-6">
+        <div className="flex items-center justify-between border-b border-slate-100 px-2 pb-3">
+          <div><p className="text-sm font-extrabold">{currentUser.nombre}</p><p className="mt-0.5 text-xs text-slate-500">{currentUser.role}</p></div>
+          <button onClick={() => setMenuOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+        </div>
+        {!isRepartidor && <div className="m-2 rounded-xl bg-slate-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Deuda total</p><p className="cc-money mt-0.5 text-lg font-extrabold text-slate-900">{totalDeudaGlobal.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })}</p></div>}
+        <div className="space-y-1 p-1">
+          <button onClick={() => closeThen(() => setActiveView('finalizarventa'))} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-emerald-700 hover:bg-emerald-50"><Zap className="h-4 w-4" />Nueva venta Express</button>
+          {!isRepartidor && <>
+            <button onClick={() => closeThen(onOpenNewPago)} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold hover:bg-slate-50"><ReceiptText className="h-4 w-4 text-emerald-600" />Registrar cobro</button>
+            <button onClick={() => closeThen(onOpenNewBoleta)} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold hover:bg-slate-50"><FilePlus2 className="h-4 w-4 text-blue-600" />Registrar boleta</button>
+            <button onClick={() => closeThen(onOpenNewCustomer)} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold hover:bg-slate-50"><Plus className="h-4 w-4 text-blue-600" />Nuevo cliente</button>
+          </>}
+          <button onClick={() => closeThen(onOpenBackupModal)} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold hover:bg-slate-50"><Download className="h-4 w-4 text-slate-500" />Respaldos</button>
+          {!isRepartidor && <button onClick={() => closeThen(onOpenSettingsModal)} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold hover:bg-slate-50"><Settings className="h-4 w-4 text-slate-500" />Configuración</button>}
+          {!checkIsStandalone() && <button onClick={() => { void promptPwaInstall().then((installed) => { if (!installed) window.dispatchEvent(new CustomEvent('open-pwa-modal')); }); setMenuOpen(false); }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold hover:bg-slate-50"><Smartphone className="h-4 w-4 text-blue-600" />Instalar en este dispositivo</button>}
+          <button onClick={() => closeThen(onOpenSyncModal)} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold hover:bg-slate-50 md:hidden"><MessageSquare className="h-4 w-4 text-slate-500" />Sincronización</button>
+        </div>
+        <div className="mt-1 border-t border-slate-100 p-1 pt-2"><button onClick={() => closeThen(onLogout)} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Cerrar sesión</button></div>
+      </section>
+    </div>}
+  </header>;
+};

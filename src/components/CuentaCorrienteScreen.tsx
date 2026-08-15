@@ -105,9 +105,9 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
   };
 
   return (
-    <div id="cuenta-corriente-screen-container" className="space-y-6 pb-16">
+    <div id="cuenta-corriente-screen-container" className="cc-page space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+      <div className="cc-page-header mb-0">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center space-x-2">
             <Receipt className="w-6 h-6 text-blue-600" />
@@ -120,7 +120,7 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
 
         <button
           onClick={handleExportCSV}
-          className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-xs transition flex items-center justify-center space-x-2"
+          className="cc-btn shrink-0 bg-slate-900 text-white hover:bg-slate-800"
         >
           <Download className="w-4 h-4" />
           <span>Exportar Planilla CSV</span>
@@ -128,22 +128,22 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
       </div>
 
       {/* Tarjetas de Balance Filtrado */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+        <div className="cc-card-compact p-3">
           <p className="text-xs font-bold uppercase text-slate-500">Total Boletas / Débitos (+)</p>
           <p className="text-xl font-black font-mono text-red-600 mt-1">
             {formatCurrency(totalDebitosSum)}
           </p>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200">
+        <div className="cc-card-compact p-3">
           <p className="text-xs font-bold uppercase text-slate-500">Total Pagos / Créditos (-)</p>
           <p className="text-xl font-black font-mono text-emerald-600 mt-1">
             {formatCurrency(totalCreditosSum)}
           </p>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200">
+        <div className="cc-card-compact p-3">
           <p className="text-xs font-bold uppercase text-slate-500">Diferencia Neta Filtrada</p>
           <p className={`text-xl font-black font-mono mt-1 ${totalDebitosSum - totalCreditosSum >= 0 ? 'text-slate-900' : 'text-emerald-600'}`}>
             {formatCurrency(totalDebitosSum - totalCreditosSum)}
@@ -152,7 +152,7 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
       </div>
 
       {/* Filtros */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+      <div className="cc-card space-y-3 p-3.5">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -161,7 +161,8 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Buscar por N° Boleta, Detalle..."
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
+              className="cc-input min-h-11 pl-9 text-xs"
+              inputMode="search"
             />
           </div>
 
@@ -169,7 +170,7 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
             <select
               value={selectedTipo}
               onChange={(e) => setSelectedTipo(e.target.value)}
-              className="w-full py-1.5 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
+              className="cc-input min-h-11 text-xs"
             >
               <option value="TODOS">📄 Todos los Tipos de Movimiento</option>
               <option value="BOLETA">🔴 Solo Boletas (Ventas)</option>
@@ -183,7 +184,7 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
             <select
               value={selectedCustomerId}
               onChange={(e) => setSelectedCustomerId(e.target.value)}
-              className="w-full py-1.5 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
+              className="cc-input min-h-11 text-xs"
             >
               <option value="TODOS">👥 Todos los Clientes</option>
               {customers.map((c) => (
@@ -197,7 +198,7 @@ export const CuentaCorrienteScreen: React.FC<CuentaCorrienteScreenProps> = ({
       </div>
 
       {/* Lista de Movimientos */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+      <div className="cc-card overflow-hidden">
         <div className="divide-y divide-slate-100">
           {filteredMovements.map((mov) => {
             const cust = customers.find((c) => c.id === mov.customerId);

@@ -337,7 +337,7 @@ export default function App() {
   const reminders = getSmartReminders(customers, movements, visits);
 
   return (
-    <div className="min-h-[100dvh] w-full max-w-full bg-slate-100 text-slate-900 flex flex-col md:flex-row font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden">
+    <div className="cc-app-shell min-h-[100dvh] w-full max-w-full text-slate-900 flex flex-col md:flex-row font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden">
       {/* PWA Install Banner & Offline Notification */}
       <PwaInstallBanner />
       <TestVersionNotice />
@@ -395,7 +395,7 @@ export default function App() {
         />
 
         {/* Content Body Container */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-6 pb-20 md:pb-8 overflow-x-hidden">
+        <main className="flex-1 w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 overflow-x-hidden">
         <ErrorBoundary key={activeView} onReset={() => setActiveView('finalizarventa')}>
           {activeView === 'finalizarventa' && (
             <VirtualBoletaScreen
@@ -527,6 +527,7 @@ export default function App() {
                 onEditCustomer={handleEditCustomer}
                 onOpenNewBoleta={handleOpenNewBoleta}
                 onOpenNewPago={handleOpenNewPago}
+                onStartSale={handleStartSaleForCustomer}
                 onOpenNewAjuste={handleOpenNewAjuste}
                 onOpenRegistrarVisita={handleOpenRegistrarVisita}
                 onViewImage={(url, title) =>

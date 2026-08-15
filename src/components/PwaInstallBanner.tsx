@@ -6,7 +6,8 @@ import {
   checkIsIos,
   triggerSwUpdate,
   setupInstallPromptListener,
-  registerServiceWorker
+  registerServiceWorker,
+  isNativeApp,
 } from '../utils/pwaManager';
 
 interface PwaInstallProps {
@@ -14,6 +15,7 @@ interface PwaInstallProps {
 }
 
 export const PwaInstallBanner: React.FC<PwaInstallProps> = () => {
+  const [isNative] = useState(() => isNativeApp());
   const [isInstallable, setIsInstallable] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isIos, setIsIos] = useState(false);
@@ -23,6 +25,7 @@ export const PwaInstallBanner: React.FC<PwaInstallProps> = () => {
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   useEffect(() => {
+    if (isNative) return;
     setIsStandalone(checkIsStandalone());
     setIsIos(checkIsIos());
 
@@ -50,7 +53,11 @@ export const PwaInstallBanner: React.FC<PwaInstallProps> = () => {
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('open-pwa-modal', handleOpenModal);
     };
-  }, []);
+  }, [isNative]);
+
+  // An installed Capacitor app must never receive browser installation or
+  // service-worker update messaging. Its bundle is updated with the APK.
+  if (isNative) return null;
 
   const handleInstallClick = async () => {
     if (isInstallable) {

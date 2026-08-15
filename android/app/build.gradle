@@ -1,5 +1,30 @@
 apply plugin: 'com.android.application'
 
+def permanentSigningProperties = new Properties()
+def permanentSigningPropertiesFile = new File(System.getProperty('user.home'), '.cyc-gestion-signing/signing.properties')
+if (permanentSigningPropertiesFile.exists()) {
+    permanentSigningPropertiesFile.withInputStream { permanentSigningProperties.load(it) }
+}
+
+def permanentSigningValue = { String key ->
+    System.getenv(key) ?: permanentSigningProperties.getProperty(key)
+}
+
+def permanentSigningStorePath = permanentSigningValue('CYC_ANDROID_KEYSTORE_PATH')
+def permanentSigningStorePassword = permanentSigningValue('CYC_ANDROID_STORE_PASSWORD')
+def permanentSigningKeyAlias = permanentSigningValue('CYC_ANDROID_KEY_ALIAS')
+def permanentSigningKeyPassword = permanentSigningValue('CYC_ANDROID_KEY_PASSWORD')
+def permanentSigningMissingValues = [
+    CYC_ANDROID_KEYSTORE_PATH: permanentSigningStorePath,
+    CYC_ANDROID_STORE_PASSWORD: permanentSigningStorePassword,
+    CYC_ANDROID_KEY_ALIAS: permanentSigningKeyAlias,
+    CYC_ANDROID_KEY_PASSWORD: permanentSigningKeyPassword,
+].findAll { key, value -> !value }.keySet()
+
+if (!permanentSigningMissingValues.isEmpty()) {
+    throw new GradleException("Falta la firma permanente de C&C Gestión Prueba: ${permanentSigningMissingValues.join(', ')}. Configurá las variables de entorno o %USERPROFILE%\\.cyc-gestion-signing\\signing.properties.")
+}
+
 android {
     namespace = "com.cycgestion.prueba"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +32,10 @@ android {
         applicationId "com.cycgestion.prueba"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+        // Keep the same package and signing identity so Android updates the
+        // installed test app in place and retains its local data.
+        versionCode 2
+        versionName "0.1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +43,22 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        permanentTest {
+            storeFile file(permanentSigningStorePath)
+            storePassword permanentSigningStorePassword
+            keyAlias permanentSigningKeyAlias
+            keyPassword permanentSigningKeyPassword
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.permanentTest
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.permanentTest
         }
     }
 }

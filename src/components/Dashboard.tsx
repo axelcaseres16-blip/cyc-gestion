@@ -116,9 +116,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     .slice(0, 6);
 
   return (
-    <div id="dashboard-container" className="space-y-6 pb-12">
+    <div id="dashboard-container" className="cc-page space-y-4">
       {/* Saludo Ejecutivo y Banner Principal */}
-      <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-800 relative overflow-hidden">
+      <div className="relative overflow-hidden rounded-[20px] border border-slate-800 bg-[#0f1d35] p-4 text-white shadow-lg sm:p-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div>
             <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-bold border border-blue-500/30 mb-3">
@@ -166,9 +166,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Grid de 10 Tarjetas de Inteligencia Operativa */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
         {/* 1. Visitas de Hoy */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="cc-card-compact p-3">
           <span className="text-[10px] font-black uppercase text-slate-500 block">
             Clientes p/ Visitar
           </span>
@@ -179,7 +179,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* 2. Ventas del Día */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="cc-card-compact p-3">
           <span className="text-[10px] font-black uppercase text-slate-500 block">
             Ventas del Día
           </span>
@@ -192,7 +192,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* 3. Cobros del Día */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="cc-card-compact p-3">
           <span className="text-[10px] font-black uppercase text-slate-500 block">
             Cobros del Día
           </span>
@@ -205,7 +205,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* 4. Fiado Generado Hoy */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="cc-card-compact p-3">
           <span className="text-[10px] font-black uppercase text-slate-500 block">
             Fiado Generado
           </span>
@@ -216,7 +216,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* 5. Clientes Morosos */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="cc-card-compact p-3">
           <span className="text-[10px] font-black uppercase text-slate-500 block">
             Clientes Morosos
           </span>
@@ -229,7 +229,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* 6. Clientes Inactivos */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="cc-card-compact p-3">
           <span className="text-[10px] font-black uppercase text-slate-500 block">
             Clientes Inactivos
           </span>

@@ -5,6 +5,12 @@ android/.gradle/
 android/.idea/
 android/app/build/
 android/local.properties
+android/signing.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pk8
 *.apk
 coverage/
 .DS_Store

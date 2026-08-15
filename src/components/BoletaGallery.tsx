@@ -60,6 +60,8 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
   onRefreshData,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'TODAS' | 'VIRTUAL' | 'FISICA'>('TODAS');
+  const [statusFilter, setStatusFilter] = useState<'TODOS' | 'GENERADA' | 'PENDIENTE' | 'ANULADA'>('TODOS');
   const [persistedImageUrls, setPersistedImageUrls] = useState<Record<string, string>>({});
   const [recoveringBoletaId, setRecoveringBoletaId] = useState<string | null>(null);
 
@@ -123,11 +125,14 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
   const filteredPhotos = boletaPhotos.filter((boleta) => {
     const customer = customers.find((current) => current.id === boleta.customerId);
     const term = searchTerm.toLowerCase();
-    return (
+    const matchesText = (
       (boleta.numeroBoleta && boleta.numeroBoleta.toLowerCase().includes(term)) ||
       (customer && (customer.nombre.toLowerCase().includes(term) || customer.alias.toLowerCase().includes(term))) ||
       boleta.descripcion.toLowerCase().includes(term)
     );
+    const matchesType = typeFilter === 'TODAS' || (typeFilter === 'VIRTUAL' ? boleta.isVirtual : !boleta.isVirtual);
+    const currentStatus = boleta.isAnulada ? 'ANULADA' : boleta.needsImageRecovery ? 'PENDIENTE' : 'GENERADA';
+    return matchesText && matchesType && (statusFilter === 'TODOS' || statusFilter === currentStatus);
   });
 
   const handleShare = async (boleta: GalleryBoleta) => {
@@ -166,42 +171,52 @@ export const BoletaGallery: React.FC<BoletaGalleryProps> = ({
   };
 
   return (
-    <div id="boleta-gallery-container" className="space-y-6 pb-16">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+    <div id="boleta-gallery-container" className="cc-page space-y-4">
+      <div className="cc-page-header mb-0">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center space-x-2">
-            <Camera className="w-6 h-6 text-blue-600" />
+          <h1 className="cc-page-title flex items-center space-x-2">
+            <Camera className="h-5 w-5 text-blue-600" />
             <span>Galería de Fotos de Boletas ({boletaPhotos.length})</span>
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 font-medium">
+          <p className="cc-page-subtitle">
             Comprobantes físicos y boletas virtuales resguardados localmente
           </p>
         </div>
-        <div className="relative sm:w-72">
+        <div className="relative w-44 sm:w-72">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Buscar por N° Boleta o Cliente..."
-            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="cc-input min-h-11 pl-9 text-xs"
+            inputMode="search"
           />
         </div>
       </div>
 
+      <div className="cc-card grid gap-2 p-3 sm:grid-cols-2">
+        <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)} className="cc-input min-h-11 text-xs">
+          <option value="TODAS">Todos los tipos</option><option value="VIRTUAL">Virtuales</option><option value="FISICA">Físicas</option>
+        </select>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="cc-input min-h-11 text-xs">
+          <option value="TODOS">Todos los estados</option><option value="GENERADA">Generadas</option><option value="PENDIENTE">Pendientes</option><option value="ANULADA">Anuladas</option>
+        </select>
+      </div>
+
       {filteredPhotos.length === 0 ? (
-        <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 text-slate-500 space-y-2">
+        <div className="cc-card p-12 text-center text-slate-500 space-y-2">
           <Camera className="w-12 h-12 text-slate-300 mx-auto" />
           <h3 className="font-bold text-slate-800">No hay comprobantes para mostrar</h3>
           <p className="text-xs text-slate-500">Los comprobantes generados y las fotos de boletas aparecerán aquí.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredPhotos.map((boleta) => {
             const customer = customers.find((current) => current.id === boleta.customerId);
             const title = `Boleta ${boleta.numeroBoleta || ''} - ${customer ? customer.alias || customer.nombre : ''}`;
             return (
-              <div key={`${boleta.isVirtual ? 'virtual' : 'fisica'}-${boleta.id}`} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between group">
+              <div key={`${boleta.isVirtual ? 'virtual' : 'fisica'}-${boleta.id}`} className="cc-card-compact overflow-hidden transition hover:shadow-md flex flex-col justify-between group">
                 <div className={`relative aspect-3/4 bg-slate-100 overflow-hidden ${boleta.imageUrl ? 'cursor-pointer' : ''}`} onClick={() => boleta.imageUrl && onViewImage(boleta.imageUrl, title)}>
                   {boleta.imageUrl ? <>
                     <img src={boleta.imageUrl} alt={`Boleta ${boleta.numeroBoleta}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />

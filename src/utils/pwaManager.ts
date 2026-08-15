@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+
 // Service Worker registration & PWA helper utilities
 
 export interface PwaStatus {
@@ -9,6 +11,18 @@ export interface PwaStatus {
 }
 
 let deferredPrompt: any = null;
+
+/**
+ * An APK embeds the same web bundle, but it is already installed. Keeping this
+ * detection here avoids showing browser/PWA installation UI inside Capacitor.
+ */
+export function isNativeApp(): boolean {
+  try {
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
 
 export function registerServiceWorker(onUpdateFound?: () => void) {
   if ('serviceWorker' in navigator) {
@@ -84,6 +98,7 @@ export async function promptPwaInstall(): Promise<boolean> {
 
 export function checkIsStandalone(): boolean {
   return (
+    isNativeApp() ||
     window.matchMedia('(display-mode: standalone)').matches ||
     (window.navigator as any).standalone === true ||
     document.referrer.includes('android-app://')

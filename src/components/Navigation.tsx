@@ -1,22 +1,21 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  LayoutDashboard,
-  Users,
-  Truck,
-  Receipt,
+  AlertTriangle,
   Camera,
-  PlusCircle,
-  DollarSign,
-  ShieldAlert,
-  Zap,
-  Menu,
-  X,
   ChevronRight,
-  LogOut,
-  Download,
-  Settings,
-  MessageSquare,
+  ClipboardList,
+  DollarSign,
+  LayoutDashboard,
+  Menu,
+  Package,
+  Plus,
+  ReceiptText,
+  ShieldCheck,
   Tags,
+  Truck,
+  Users,
+  X,
+  Zap,
 } from 'lucide-react';
 
 interface NavigationProps {
@@ -27,300 +26,101 @@ interface NavigationProps {
   riskyCount: number;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({
-  activeView,
-  setActiveView,
-  onOpenNewCustomer,
-  currentUserRole,
-  riskyCount,
-}) => {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+type NavItem = { id: string; label: string; icon: React.ElementType; badge?: string; tone?: 'success' | 'danger' };
 
+export const Navigation: React.FC<NavigationProps> = ({ activeView, setActiveView, onOpenNewCustomer, currentUserRole, riskyCount }) => {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const isRepartidor = currentUserRole === 'REPARTIDOR';
   const isDueno = currentUserRole === 'DUENO';
 
-  // Configuración dinámica de items según los 3 roles oficiales
-  let navItems = [
-    {
-      id: 'finalizarventa',
-      label: '⚡ Finalizar Venta Express',
-      icon: Zap,
-      badge: 'Rápido',
-      badgeColor: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-    },
-    {
-      id: 'boletavirtual',
-      label: '📄 Boleta Virtual por Cliente',
-      icon: Receipt,
-      badge: 'Nuevo',
-      badgeColor: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-    },
-    {
-      id: 'stocksemanal',
-      label: '🥩 Control de Stock Semanal',
-      icon: Truck,
-      badge: 'Semáforo',
-      badgeColor: 'bg-teal-500/10 text-teal-600 border-teal-500/20',
-    },
-    {
-      id: 'hoy',
-      label: 'HOY (Ruta de Reparto)',
-      icon: Truck,
-    },
-    {
-      id: 'dashboard',
-      label: 'Dashboard Principal',
-      icon: LayoutDashboard,
-    },
-    {
-      id: 'estadoreparto',
-      label: 'Estado del Día / Turno',
-      icon: Truck,
-    },
-    {
-      id: 'alertas',
-      label: 'Centro de Alertas y Morosos',
-      icon: ShieldAlert,
-    },
-    {
-      id: 'cobranzas',
-      label: 'Gestión de Cobranzas',
-      icon: DollarSign,
-    },
-    {
-      id: 'clientes',
-      label: 'Listado de Clientes',
-      icon: Users,
-      badge: riskyCount > 0 ? `${riskyCount} riesgo` : undefined,
-      badgeColor: 'bg-red-500/10 text-red-600 border-red-500/20',
-    },
-    {
-      id: 'listasprecios',
-      label: 'Listas de Precios',
-      icon: Tags,
-    },
-    {
-      id: 'cuentacorriente',
-      label: 'Cuentas Corrientes',
-      icon: Receipt,
-    },
-    {
-      id: 'boletas',
-      label: 'Galería de Boletas',
-      icon: Camera,
-    },
-    {
-      id: 'auditoria',
-      label: 'Auditoría del Sistema',
-      icon: ShieldAlert,
-    },
-  ];
+  const groups = useMemo(() => {
+    const operation: NavItem[] = isRepartidor
+      ? [
+          { id: 'finalizarventa', label: 'Express', icon: Zap, tone: 'success' },
+          { id: 'hoy', label: 'Ruta de hoy', icon: Truck },
+          { id: 'repartidorpanel', label: 'Mi jornada', icon: ClipboardList },
+          { id: 'estadoreparto', label: 'Estado del día', icon: Truck },
+        ]
+      : [
+          { id: 'finalizarventa', label: 'Express', icon: Zap, tone: 'success' },
+          { id: 'hoy', label: 'Ruta de hoy', icon: Truck },
+          { id: 'stocksemanal', label: 'Stock semanal', icon: Package },
+        ];
 
-  if (isDueno) {
-    navItems.push({
-      id: 'usuarios',
-      label: '👑 Administración de Usuarios',
-      icon: Users,
-      badge: 'Dueño',
-      badgeColor: 'bg-amber-500/20 text-amber-800 border-amber-300',
-    });
-  }
-
-  if (isRepartidor) {
-    navItems = [
-      {
-        id: 'repartidorpanel',
-        label: '🚚 Módulo de Camión',
-        icon: Truck,
-      },
-      {
-        id: 'finalizarventa',
-        label: '⚡ Finalizar Venta',
-        icon: Zap,
-        badge: '1 Solo Paso',
-        badgeColor: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-      },
-      {
-        id: 'hoy',
-        label: 'Panel HOY (Ruta)',
-        icon: Truck,
-      },
-      {
-        id: 'estadoreparto',
-        label: 'Estado Reparto del Día',
-        icon: Truck,
-      },
-      {
-        id: 'clientes',
-        label: 'Clientes',
-        icon: Users,
-      },
-      {
-        id: 'boletas',
-        label: 'Fotos de Boletas',
-        icon: Camera,
-      },
+    const management: NavItem[] = [
+      { id: 'clientes', label: 'Clientes', icon: Users, badge: riskyCount ? `${riskyCount} en riesgo` : undefined, tone: riskyCount ? 'danger' : undefined },
+      ...(!isRepartidor ? [
+        { id: 'cobranzas', label: 'Cobranzas', icon: DollarSign },
+        { id: 'cuentacorriente', label: 'Cuenta corriente', icon: ReceiptText },
+        { id: 'listasprecios', label: 'Listas de precios', icon: Tags },
+      ] : []),
+      { id: 'boletas', label: 'Boletas', icon: Camera },
     ];
-  }
 
-  const canCreateCustomer = !isRepartidor;
+    const control: NavItem[] = isRepartidor ? [] : [
+      { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
+      { id: 'alertas', label: 'Alertas', icon: AlertTriangle },
+      { id: 'auditoria', label: 'Auditoría', icon: ShieldCheck },
+      ...(isDueno ? [{ id: 'usuarios', label: 'Usuarios', icon: Users }] : []),
+    ];
+    return [{ title: 'Operación', items: operation }, { title: 'Gestión', items: management }, { title: 'Control', items: control }].filter((group) => group.items.length);
+  }, [isDueno, isRepartidor, riskyCount]);
 
-  const handleSelectView = (id: string) => {
-    setActiveView(id);
-    setIsDrawerOpen(false);
-  };
-
-  // Íconos principales para la barra inferior móvil
-  const mobileBottomQuickItems = isRepartidor
+  const quickItems = isRepartidor
     ? [
-        navItems.find((n) => n.id === 'repartidorpanel') || navItems[0],
-        navItems.find((n) => n.id === 'finalizarventa') || navItems[1],
-        navItems.find((n) => n.id === 'hoy') || navItems[2],
-        navItems.find((n) => n.id === 'clientes') || navItems[3],
+        groups[0].items.find((item) => item.id === 'finalizarventa')!,
+        groups[0].items.find((item) => item.id === 'hoy')!,
+        groups[0].items.find((item) => item.id === 'repartidorpanel')!,
+        groups[1].items.find((item) => item.id === 'clientes')!,
       ]
     : [
-        navItems.find((n) => n.id === 'finalizarventa') || navItems[0],
-        navItems.find((n) => n.id === 'hoy') || navItems[1],
-        navItems.find((n) => n.id === 'dashboard') || navItems[2],
-        navItems.find((n) => n.id === 'clientes') || navItems[3],
+        groups[0].items.find((item) => item.id === 'finalizarventa')!,
+        groups[0].items.find((item) => item.id === 'hoy')!,
+        groups[2].items.find((item) => item.id === 'dashboard')!,
+        groups[1].items.find((item) => item.id === 'clientes')!,
       ];
 
-  return (
-    <>
-      {/* Desktop Navigation handled by SidebarDesktop */}
+  const select = (id: string) => { setActiveView(id); setIsDrawerOpen(false); };
 
-      {/* Mobile Bottom Navigation Bar */}
-      <div id="mobile-bottom-nav" className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-40 md:hidden px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom,0px))] shadow-2xl">
-        <div className="grid grid-cols-5 gap-1 items-center">
-          {mobileBottomQuickItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeView === item.id;
-            const isZap = item.id === 'finalizarventa';
-            return (
-              <button
-                key={item.id}
-                id={`mobile-nav-${item.id}`}
-                onClick={() => handleSelectView(item.id)}
-                className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl text-center transition min-h-[48px] active:scale-95 ${
-                  isActive
-                    ? isZap
-                      ? 'text-white bg-emerald-600 font-black shadow-md'
-                      : 'text-white bg-blue-600 font-extrabold'
-                    : isZap
-                    ? 'text-emerald-400 bg-emerald-950/60 font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Icon className={`w-5 h-5 mb-0.5 ${isActive ? 'text-white' : isZap ? 'text-emerald-400' : 'text-slate-400'}`} />
-                <span className="text-[10px] truncate max-w-full leading-tight font-extrabold">{item.label.split(' ')[0]}</span>
-              </button>
-            );
-          })}
-
-          {/* Botón Menú Completo (Hamburguesa) */}
-          <button
-            id="mobile-nav-hamburger"
-            onClick={() => setIsDrawerOpen(true)}
-            className="flex flex-col items-center justify-center py-2 px-1 rounded-xl text-center transition min-h-[48px] text-amber-400 bg-slate-800/80 border border-slate-700/80 active:scale-95 cursor-pointer"
-          >
-            <Menu className="w-5 h-5 mb-0.5 text-amber-400" />
-            <span className="text-[10px] truncate max-w-full leading-tight font-black">Menú ☰</span>
-          </button>
-        </div>
+  return <>
+    <nav id="mobile-bottom-nav" aria-label="Navegación principal" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/96 px-1.5 pb-[calc(0.35rem+env(safe-area-inset-bottom,0px))] pt-1 shadow-[0_-8px_24px_rgba(15,29,53,0.10)] backdrop-blur md:hidden">
+      <div className="grid grid-cols-5 gap-0.5">
+        {quickItems.map((item) => {
+          const Icon = item.icon;
+          const active = activeView === item.id;
+          return <button key={item.id} id={`mobile-nav-${item.id}`} onClick={() => select(item.id)} className={`flex min-h-[54px] flex-col items-center justify-center rounded-xl px-1 text-[10px] font-bold transition ${active ? 'bg-blue-50 text-blue-700' : item.tone === 'success' ? 'text-emerald-700' : 'text-slate-500'}`}>
+            <Icon className={`mb-0.5 h-5 w-5 ${active ? 'stroke-[2.5]' : ''}`} />
+            <span className="max-w-full truncate">{item.label}</span>
+          </button>;
+        })}
+        <button id="mobile-nav-hamburger" onClick={() => setIsDrawerOpen(true)} className="flex min-h-[54px] flex-col items-center justify-center rounded-xl px-1 text-[10px] font-bold text-slate-500 transition active:scale-95">
+          <Menu className="mb-0.5 h-5 w-5" /><span>Menú</span>
+        </button>
       </div>
+    </nav>
 
-      {/* Mobile Drawer Slide-Over Navigation */}
-      {isDrawerOpen && (
-        <div className="fixed inset-0 z-50 md:hidden flex justify-end">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs transition-opacity"
-            onClick={() => setIsDrawerOpen(false)}
-          />
-
-          {/* Drawer Sidebar */}
-          <div className="relative w-full max-w-xs bg-slate-900 text-white h-full shadow-2xl flex flex-col z-10 border-l border-slate-800 animate-slide-in-right">
-            {/* Drawer Header */}
-            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500 text-slate-950 font-black flex items-center justify-center text-base">
-                  C&C
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-white">Menú C&C Gestión</h3>
-                  <p className="text-[10px] text-slate-400 font-medium">Todas las secciones del sistema</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsDrawerOpen(false)}
-                className="p-2 text-slate-400 hover:text-white rounded-xl min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Quick Action in Drawer */}
-            {canCreateCustomer && (
-              <div className="p-3 bg-slate-800/50 border-b border-slate-800">
-                <button
-                  onClick={() => {
-                    setIsDrawerOpen(false);
-                    onOpenNewCustomer();
-                  }}
-                  className="w-full min-h-[48px] py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center space-x-2 cursor-pointer active:scale-98"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  <span>+ Registrar Nuevo Cliente</span>
-                </button>
-              </div>
-            )}
-
-            {/* Navigation Options List */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-2 py-1">
-                Navegación Principal
-              </p>
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeView === item.id;
-                const isZap = item.id === 'finalizarventa';
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleSelectView(item.id)}
-                    className={`w-full min-h-[48px] px-3.5 py-3 rounded-2xl text-xs font-bold transition flex items-center justify-between cursor-pointer active:scale-98 ${
-                      isActive
-                        ? 'bg-blue-600 text-white font-extrabold shadow-md'
-                        : isZap
-                        ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/80'
-                        : 'text-slate-200 hover:bg-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3 truncate">
-                      <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : isZap ? 'text-emerald-400' : 'text-slate-400'}`} />
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                    {item.badge ? (
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-black border ${item.badgeColor} shrink-0`}>
-                        {item.badge}
-                      </span>
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Footer info in drawer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-950/80 text-center text-[11px] text-slate-400">
-              <p className="font-bold text-slate-300">C&C Gestión Distribuidora</p>
-              <p className="text-[10px] text-slate-500">Versión Móvil Optimizada Android</p>
-            </div>
-          </div>
+    {isDrawerOpen && <div className="fixed inset-0 z-50 md:hidden">
+      <button aria-label="Cerrar menú" onClick={() => setIsDrawerOpen(false)} className="absolute inset-0 h-full w-full bg-slate-950/45 backdrop-blur-[1px]" />
+      <aside className="absolute bottom-0 right-0 top-0 flex w-[min(22rem,92vw)] flex-col bg-white shadow-2xl animate-in slide-in-from-right duration-200">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))]">
+          <div><p className="text-base font-extrabold tracking-[-0.03em] text-slate-900">C&C Gestión</p><p className="mt-0.5 text-xs text-slate-500">Accesos y administración</p></div>
+          <button onClick={() => setIsDrawerOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
         </div>
-      )}
-    </>
-  );
+        {!isRepartidor && <div className="px-4 pt-4"><button onClick={() => { setIsDrawerOpen(false); onOpenNewCustomer(); }} className="cc-btn cc-btn-primary w-full"><Plus className="h-4 w-4" />Nuevo cliente</button></div>}
+        <div className="cc-scrollbar flex-1 space-y-5 overflow-y-auto px-4 py-5">
+          {groups.map((group) => <section key={group.title}>
+            <p className="cc-section-label mb-2 px-2">{group.title}</p>
+            <div className="space-y-1">
+              {group.items.map((item) => { const Icon = item.icon; const active = activeView === item.id; return <button key={item.id} onClick={() => select(item.id)} className={`flex min-h-[50px] w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold transition ${active ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}>
+                <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-blue-600' : item.tone === 'success' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                <span className="flex-1 truncate">{item.label}</span>
+                {item.badge ? <span className={item.tone === 'danger' ? 'cc-badge cc-badge-danger' : 'cc-badge cc-badge-neutral'}>{item.badge}</span> : <ChevronRight className="h-4 w-4 text-slate-300" />}
+              </button>; })}
+            </div>
+          </section>)}
+        </div>
+        <p className="border-t border-slate-100 px-5 py-4 text-[11px] font-medium text-slate-400">Versión de prueba · Datos locales del dispositivo</p>
+      </aside>
+    </div>}
+  </>;
 };
-

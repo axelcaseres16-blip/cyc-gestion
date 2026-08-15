@@ -54,9 +54,30 @@ jobs:
         working-directory: android
         run: chmod +x gradlew
 
-      - name: Compilar app-debug.apk
+      - name: Restaurar firma permanente
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/cyc-gestion-prueba.jks"
+          test -s "$RUNNER_TEMP/cyc-gestion-prueba.jks"
+
+      - name: Compilar app-debug.apk con firma permanente
         working-directory: android
+        env:
+          CYC_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/cyc-gestion-prueba.jks
+          CYC_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          CYC_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CYC_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: Verificar certificado del APK
+        run: |
+          EXPECTED_SHA256="8912004da9b04a25c23987d3e91cd213680d30d2f632943308bafd1a7837b772"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          ACTUAL_SHA256="$($APKSIGNER verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | awk '/Signer #1 certificate SHA-256 digest:/ { print $NF }')"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+          echo "Firma verificada: $ACTUAL_SHA256"
 
       - name: Publicar APK como artifact
         uses: actions/upload-artifact@v4
@@ -88,3 +109,7 @@ jobs:
               --notes "APK debug actualizado desde la rama de prueba. Commit: $SHA" \
               --prerelease
           fi
+
+      - name: Eliminar firma temporal
+        if: always()
+        run: rm -f "$RUNNER_TEMP/cyc-gestion-prueba.jks"
