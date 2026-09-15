@@ -313,6 +313,8 @@ export interface BoletaItem {
 
 export interface VirtualBoleta {
   id: string;
+  /** Identificador local del borrador que originó esta venta, para evitar duplicados al recuperarlo. */
+  draftId?: string;
   numeroBoleta: string;
   customerId: string;
   customerName: string;

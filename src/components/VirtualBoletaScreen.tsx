@@ -22,6 +22,10 @@ import {
   saveSaleDraft,
   getSaleDraft,
   clearSaleDraft,
+  createSaleDraftId,
+  hasSaleDraftContent,
+  SaleDraftData,
+  SaleDraftItemData,
 } from '../utils/storage';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { VirtualBoletaModal } from './VirtualBoletaModal';
@@ -117,8 +121,16 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
   // Generated Boleta Modal
   const [completedBoleta, setCompletedBoleta] = useState<VirtualBoleta | null>(null);
 
-  // Draft Notice
-  const [restoredDraftNotice, setRestoredDraftNotice] = useState<boolean>(false);
+  // A draft is intentionally separate from a completed sale or IMAGE_PENDING.
+  // Nothing from this state has accounting effects until handleFinalize runs.
+  const [draftToRecover, setDraftToRecover] = useState<SaleDraftData | null>(() => getSaleDraft());
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const draftRecoveryBlockedRef = useRef(Boolean(draftToRecover));
+  const draftIdRef = useRef(draftToRecover?.draftId || createSaleDraftId());
+  const applyingDraftRef = useRef(false);
+  const finalizationInFlightRef = useRef(false);
+  const completedSaleRef = useRef(false);
+  const latestDraftRef = useRef<SaleDraftData | null>(null);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -128,6 +140,10 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     if (selectedCustomer) {
       const latestLists = getStoredPriceLists();
       setPriceLists(latestLists);
+      if (applyingDraftRef.current) {
+        applyingDraftRef.current = false;
+        return;
+      }
       setActivePriceListId(selectedCustomer.priceListId || '');
 
       // Default payment mode if customary
@@ -145,28 +161,114 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
     }
   }, [selectedCustomer]);
 
-  // Restore Draft on mount if available
-  useEffect(() => {
-    const draft = getSaleDraft();
-    if (draft && !preselectedCustomer) {
-      if (draft.customerId) {
-        const found = customers.find((c) => c.id === draft.customerId);
-        if (found) setSelectedCustomer(found);
-      }
-      if (draft.fotoUrl) setFotoUrl(draft.fotoUrl);
-      setRestoredDraftNotice(true);
-    }
-  }, [customers, preselectedCustomer]);
+  const restoreDraft = () => {
+    if (!draftToRecover) return;
+    const customer = customers.find((candidate) => candidate.id === draftToRecover.customerId);
+    if (!customer) return;
 
-  // Save Draft automatically
+    applyingDraftRef.current = true;
+    draftIdRef.current = draftToRecover.draftId || createSaleDraftId();
+    setSelectedCustomer(customer);
+    setSelectedBranch(customer.sucursales?.find((branch) => branch.id === draftToRecover.branchId) || null);
+    setActivePriceListId(draftToRecover.activePriceListId || customer.priceListId || '');
+    setItems(draftToRecover.items || []);
+    setDescuentoInput(draftToRecover.descuentoInput || '0');
+    setRecargoInput(draftToRecover.recargoInput || '0');
+    setPagoTipo(draftToRecover.pagoTipo || 'DEBE');
+    setPagoEfectivoInput(draftToRecover.pagoEfectivoInput || '0');
+    setPagoTransferenciaInput(draftToRecover.pagoTransferenciaInput || '0');
+    setPagoOtrosInput(draftToRecover.pagoOtrosInput || '0');
+    setFotoUrl(draftToRecover.fotoUrl || '');
+    setStockJustification(draftToRecover.stockJustification || '');
+    draftRecoveryBlockedRef.current = false;
+    setDraftToRecover(null);
+  };
+
+  const discardDraft = () => {
+    clearSaleDraft();
+    draftRecoveryBlockedRef.current = false;
+    draftIdRef.current = createSaleDraftId();
+    setSelectedCustomer(null);
+    setSelectedBranch(null);
+    setItems([]);
+    setFotoUrl('');
+    setDraftToRecover(null);
+  };
+
+  const currentDraft: SaleDraftData = {
+    schemaVersion: 2,
+    draftId: draftIdRef.current,
+    customerId: selectedCustomer?.id,
+    branchId: selectedBranch?.id,
+    activePriceListId,
+    items: items.map((item): SaleDraftItemData => ({ ...item })),
+    descuentoInput,
+    recargoInput,
+    pagoTipo,
+    pagoEfectivoInput,
+    pagoTransferenciaInput,
+    pagoOtrosInput,
+    fotoUrl,
+    stockJustification,
+    createdByUserId: currentUser.id,
+    createdByUserName: currentUser.nombre,
+  };
+  latestDraftRef.current = currentDraft;
+
+  // Persisting a draft is the only lifecycle work allowed before finalization.
+  // It does not call any manager, queue, audit, payment, or stock function.
   useEffect(() => {
-    if (selectedCustomer || items.length > 1 || fotoUrl) {
-      saveSaleDraft({
-        customerId: selectedCustomer?.id,
-        fotoUrl,
-      });
-    }
-  }, [selectedCustomer, items, fotoUrl]);
+    if (
+      draftRecoveryBlockedRef.current ||
+      completedBoleta ||
+      isFinalizing ||
+      !hasSaleDraftContent(currentDraft)
+    ) return;
+    saveSaleDraft(currentDraft);
+  }, [
+    activePriceListId,
+    completedBoleta,
+    currentUser.id,
+    currentUser.nombre,
+    descuentoInput,
+    fotoUrl,
+    isFinalizing,
+    items,
+    pagoEfectivoInput,
+    pagoOtrosInput,
+    pagoTipo,
+    pagoTransferenciaInput,
+    recargoInput,
+    selectedBranch?.id,
+    selectedCustomer?.id,
+    stockJustification,
+  ]);
+
+  useEffect(() => {
+    const persistDraftOnly = () => {
+      const draft = latestDraftRef.current;
+      if (
+        !draftRecoveryBlockedRef.current &&
+        !finalizationInFlightRef.current &&
+        !completedSaleRef.current &&
+        draft &&
+        hasSaleDraftContent(draft)
+      ) {
+        saveSaleDraft(draft);
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') persistDraftOnly();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', persistDraftOnly);
+    return () => {
+      persistDraftOnly();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', persistDraftOnly);
+    };
+  }, []);
 
   const updateProductItem = (
     productId: string,
@@ -310,24 +412,33 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       observacion: it.observacion,
     };
   });
+  const invalidDraftItems = items.filter((item) => {
+    const product = products.find((candidate) => candidate.id === item.productId);
+    return !product || !product.activo;
+  });
+  const removeDraftItem = (itemId: string) => {
+    setItems((current) => current.filter((item) => item.id !== itemId));
+  };
 
   const descuento = parseFloat(descuentoInput.replace(',', '.')) || 0;
   const recargo = parseFloat(recargoInput.replace(',', '.')) || 0;
 
   const totalBoleta = Math.max(0, itemsSubtotalSum - descuento + recargo);
 
-  // Payment mode only determines the visible fields; received amounts are always entered manually.
-  useEffect(() => {
-    if (pagoTipo === 'EFECTIVO') {
+  // Payment mode only changes visible inputs. Values are reset only by an
+  // explicit user mode change, never while restoring a draft.
+  const handlePaymentTypeChange = (nextType: 'DEBE' | 'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO') => {
+    setPagoTipo(nextType);
+    if (nextType === 'EFECTIVO') {
       setPagoTransferenciaInput('0');
-    } else if (pagoTipo === 'TRANSFERENCIA') {
+    } else if (nextType === 'TRANSFERENCIA') {
       setPagoEfectivoInput('0');
-    } else if (pagoTipo === 'DEBE') {
+    } else if (nextType === 'DEBE') {
       setPagoEfectivoInput('0');
       setPagoTransferenciaInput('0');
     }
     setPagoOtrosInput('0');
-  }, [pagoTipo]);
+  };
 
   const efecNum = parseFloat(pagoEfectivoInput.replace(',', '.')) || 0;
   const transNum = parseFloat(pagoTransferenciaInput.replace(',', '.')) || 0;
@@ -384,13 +495,12 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
   const handleGenerateSampleBoletaPhoto = () => {
     if (!selectedCustomer) return;
     const custName = selectedCustomer.alias || selectedCustomer.nombre;
-    const num = `B-${String(Date.now()).slice(-5)}`;
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800">
       <rect width="600" height="800" fill="#fcfbf7" rx="16"/>
       <rect x="20" y="20" width="560" height="760" fill="none" stroke="#0f172a" stroke-width="3" stroke-dasharray="8,8"/>
       <text x="300" y="70" font-family="sans-serif" font-size="24" font-weight="900" fill="#0f172a" text-anchor="middle">C&amp;C DISTRIBUIDORA DE CARNES</text>
-      <text x="300" y="100" font-family="sans-serif" font-size="16" font-weight="bold" fill="#059669" text-anchor="middle">BOLETA FÍSICA FOTO-CONFORMADA N° ${num}</text>
+      <text x="300" y="100" font-family="sans-serif" font-size="16" font-weight="bold" fill="#059669" text-anchor="middle">FOTO DE BORRADOR — SIN NÚMERO DEFINITIVO</text>
       <line x1="40" y1="120" x2="560" y2="120" stroke="#cbd5e1" stroke-width="2"/>
       
       <text x="50" y="160" font-family="sans-serif" font-size="16" font-weight="bold" fill="#0f172a">CLIENTE: ${custName}</text>
@@ -412,6 +522,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
 
   // Finalize Boleta Transaction
   const handleFinalize = async () => {
+    if (finalizationInFlightRef.current) return;
     if (!selectedCustomer) {
       alert('Por favor seleccione un cliente.');
       return;
@@ -427,48 +538,68 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
       return;
     }
 
+    if (invalidDraftItems.length > 0) {
+      alert('Hay productos del borrador que ya no están disponibles. Corregilos o quitálos antes de finalizar.');
+      return;
+    }
+
     if (hasStockExceeded && isRepartidor && !stockJustification.trim()) {
       alert('Esta venta supera el stock registrado. Ingrese una justificación obligatoria para continuar.');
       return;
     }
 
+    finalizationInFlightRef.current = true;
+    setIsFinalizing(true);
     const numeroBoleta = `B-${String(Date.now()).slice(-6)}`;
 
-    const { virtualBoleta, movementBoleta } = finalizeVirtualBoleta({
-      numeroBoleta,
-      customer: selectedCustomer,
-      branchId: selectedBranch?.id,
-      branchName: selectedBranch?.nombre,
-      items: processedItems,
-      subtotal: itemsSubtotalSum,
-      descuento,
-      recargo,
-      total: totalBoleta,
-      pagoEfectivo: efecNum,
-      pagoTransferencia: transNum,
-      pagoOtros: otrosNum,
-      fotoBoletaFisicaUrl: fotoUrl, // optional
-      usuario: currentUser.nombre,
-      listaPrecioAplicada: activePriceList?.nombre || 'SIN LISTA',
-      priceListId: activePriceList?.id,
-      priceListName: activePriceList?.nombre,
-    });
-
-    // Generate 1080px mobile-optimized image automatically
     try {
-      const generatedImageUrl = await generateBoletaImage(virtualBoleta);
-      await persistVirtualBoletaImage(virtualBoleta, generatedImageUrl, movementBoleta.id);
-    } catch (err) {
-      console.error('Error generando imagen de boleta:', err);
-      const message = err instanceof Error ? err.message : 'No se pudo generar el comprobante.';
-      await markVirtualBoletaImagePending(virtualBoleta, movementBoleta.id, message).catch((pendingError) => {
-        console.error('Error marcando comprobante pendiente:', pendingError);
+      const { virtualBoleta, movementBoleta, alreadyFinalized } = finalizeVirtualBoleta({
+        draftId: draftIdRef.current,
+        numeroBoleta,
+        customer: selectedCustomer,
+        branchId: selectedBranch?.id,
+        branchName: selectedBranch?.nombre,
+        items: processedItems,
+        subtotal: itemsSubtotalSum,
+        descuento,
+        recargo,
+        total: totalBoleta,
+        pagoEfectivo: efecNum,
+        pagoTransferencia: transNum,
+        pagoOtros: otrosNum,
+        fotoBoletaFisicaUrl: fotoUrl, // optional
+        usuario: currentUser.nombre,
+        listaPrecioAplicada: activePriceList?.nombre || 'SIN LISTA',
+        priceListId: activePriceList?.id,
+        priceListName: activePriceList?.nombre,
       });
-    }
 
-    clearSaleDraft();
-    setCompletedBoleta(virtualBoleta);
-    onSaleCompleted();
+      // IMAGE_PENDING remains the durable recovery path for a sale that was
+      // already finalized but whose PNG cannot be generated yet.
+      if (!alreadyFinalized) {
+        try {
+          const generatedImageUrl = await generateBoletaImage(virtualBoleta);
+          await persistVirtualBoletaImage(virtualBoleta, generatedImageUrl, movementBoleta.id);
+        } catch (err) {
+          console.error('Error generando imagen de boleta:', err);
+          const message = err instanceof Error ? err.message : 'No se pudo generar el comprobante.';
+          await markVirtualBoletaImagePending(virtualBoleta, movementBoleta.id, message).catch((pendingError) => {
+            console.error('Error marcando comprobante pendiente:', pendingError);
+          });
+        }
+      }
+
+      clearSaleDraft();
+      completedSaleRef.current = true;
+      setCompletedBoleta(virtualBoleta);
+      onSaleCompleted();
+    } catch (err) {
+      console.error('Error finalizando la venta virtual:', err);
+      alert(err instanceof Error ? err.message : 'No se pudo finalizar la venta. El borrador sigue guardado.');
+    } finally {
+      finalizationInFlightRef.current = false;
+      setIsFinalizing(false);
+    }
   };
 
   const orderedProductRows = OFFICIAL_BOLETA_CATALOG.map((definition) => ({
@@ -497,6 +628,12 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
   const catalogProduct = products.find((product) => product.id === catalogProductId);
   const formatTableCurrency = (value: number) =>
     value > 0 ? `$${value.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—';
+  const draftCustomerToRecover = draftToRecover?.customerId
+    ? customers.find((customer) => customer.id === draftToRecover.customerId)
+    : undefined;
+  const draftUpdatedAt = draftToRecover?.updatedAt
+    ? new Date(draftToRecover.updatedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+    : 'sin fecha registrada';
 
   return (
     <div className="cc-page space-y-4">
@@ -516,13 +653,39 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
           </p>
         </div>
 
-        {restoredDraftNotice && (
-          <div className="cc-badge cc-badge-warning self-center sm:self-auto">
-            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>Borrador autoguardado recuperado</span>
-          </div>
-        )}
       </div>
+
+      {draftToRecover && (
+        <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/45 p-3 sm:items-center sm:justify-center" role="presentation">
+        <section className="cc-card w-full max-w-md border-amber-300 bg-amber-50 p-4 shadow-2xl" role="dialog" aria-modal="true" aria-label="Venta sin finalizar">
+          <div className="flex gap-3">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700" />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-black text-amber-950">Venta sin finalizar</h2>
+              <p className="mt-1 text-xs font-medium text-amber-900">
+                {draftCustomerToRecover
+                  ? `Cliente: ${draftCustomerToRecover.alias || draftCustomerToRecover.nombre} · Última edición: ${draftUpdatedAt}`
+                  : 'El cliente de este borrador ya no está disponible. Podés descartarlo sin afectar datos reales.'}
+              </p>
+              <p className="mt-1 text-[11px] text-amber-800">Este borrador no creó boleta, pago, saldo, stock ni movimientos.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={restoreDraft}
+                  disabled={!draftCustomerToRecover}
+                  className="cc-btn cc-btn-primary min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Continuar
+                </button>
+                <button type="button" onClick={discardDraft} className="cc-btn cc-btn-secondary min-h-10">
+                  Descartar
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+        </div>
+      )}
 
       {/* 1. SELECCIÓN DE CLIENTE Y SUCURSAL */}
       <section className="cc-card space-y-3 p-3.5 sm:p-4">
@@ -862,7 +1025,7 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
           ].map((mode) => (
             <button
               key={mode.id}
-              onClick={() => setPagoTipo(mode.id as any)}
+              onClick={() => handlePaymentTypeChange(mode.id as 'DEBE' | 'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO')}
               className={`border px-2 py-2 text-[11px] font-extrabold text-center transition cursor-pointer ${
                 pagoTipo === mode.id
                   ? `${mode.color} ring-2 ring-slate-900 shadow-sm`
@@ -1036,15 +1199,30 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
         </div>
       </div>
 
+      {invalidDraftItems.length > 0 && (
+        <section className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-950">
+          <p className="font-black">Hay productos del borrador que ya no están disponibles.</p>
+          <p className="mt-1">No se incluirán ni se eliminarán solos. Corregilos o quitálos antes de finalizar.</p>
+          <div className="mt-2 space-y-1.5">
+            {invalidDraftItems.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-white px-2.5 py-2">
+                <span className="font-bold">{products.find((product) => product.id === item.productId)?.nombre || `Producto no disponible (${item.productId})`}</span>
+                <button type="button" onClick={() => removeDraftItem(item.id)} className="font-black text-red-700 underline">Quitar</button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* FINALIZAR BOTÓN */}
       <div className="hidden pt-2 md:block">
         <button
           onClick={handleFinalize}
-          disabled={!selectedCustomer || totalBoleta <= 0}
+          disabled={!selectedCustomer || totalBoleta <= 0 || isFinalizing || invalidDraftItems.length > 0}
           className="w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 disabled:opacity-50 text-white font-black text-base py-4 rounded-2xl shadow-xl transition cursor-pointer flex items-center justify-center space-x-3"
         >
           <CheckCircle2 className="w-6 h-6" />
-          <span>FINALIZAR VENTA Y EMITIR BOLETA VIRTUAL</span>
+          <span>{isFinalizing ? 'FINALIZANDO…' : 'FINALIZAR VENTA Y EMITIR BOLETA VIRTUAL'}</span>
         </button>
       </div>
 
@@ -1052,11 +1230,11 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
         <div className="cc-bottom-action p-2 md:hidden">
           <button
             onClick={handleFinalize}
-            disabled={!selectedCustomer}
+            disabled={!selectedCustomer || isFinalizing || invalidDraftItems.length > 0}
             className="flex min-h-[54px] w-full items-center justify-between gap-3 rounded-xl bg-emerald-600 px-4 text-left text-white disabled:opacity-50"
           >
             <span><span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-100">{items.filter((item) => Number(item.kilajeInput.replace(',', '.')) > 0 || Number(item.unidadesInput.replace(',', '.')) > 0).length} productos cargados</span><span className="cc-money text-lg font-extrabold">{formatCurrency(totalBoleta)}</span></span>
-            <span className="flex items-center gap-1 text-sm font-extrabold">Finalizar <CheckCircle2 className="h-5 w-5" /></span>
+            <span className="flex items-center gap-1 text-sm font-extrabold">{isFinalizing ? 'Finalizando…' : 'Finalizar'} <CheckCircle2 className="h-5 w-5" /></span>
           </button>
         </div>
       )}
@@ -1068,9 +1246,14 @@ export const VirtualBoletaScreen: React.FC<VirtualBoletaScreenProps> = ({
           customerPhone={selectedCustomer?.telefono}
           onClose={() => {
             setCompletedBoleta(null);
+            completedSaleRef.current = false;
+            draftIdRef.current = createSaleDraftId();
             setSelectedCustomer(null);
             setSelectedBranch(null);
             setItems([]);
+            setDescuentoInput('0');
+            setRecargoInput('0');
+            setPagoTipo('DEBE');
             setPagoEfectivoInput('0');
             setPagoTransferenciaInput('0');
             setPagoOtrosInput('0');

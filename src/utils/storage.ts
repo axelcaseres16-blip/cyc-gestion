@@ -29,6 +29,7 @@ const PENDING_SALES_KEY = 'cyc_gestion_pending_sales_v1';
 const WA_BEHAVIOR_KEY = 'cyc_gestion_wa_behavior_v1';
 const SIMULATED_OFFLINE_KEY = 'cyc_gestion_simulated_offline_v1';
 const SALE_DRAFT_KEY = 'cyc_gestion_sale_draft_v1';
+export const SALE_DRAFT_SCHEMA_VERSION = 2;
 const AUTO_BACKUP_SNAPSHOT_KEY = 'cyc_auto_backup_snapshots_v1';
 
 /**
@@ -66,24 +67,130 @@ export function getLastAutoSnapshot(): { timestamp: string; customersCount: numb
   }
 }
 
+export type SaleDraftPaymentType = 'DEBE' | 'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO';
+
+export interface SaleDraftItemData {
+  id: string;
+  productId: string;
+  unidadesInput: string;
+  kilajeInput: string;
+  precioOverride: string;
+  observacion: string;
+}
+
+/**
+ * Estado local previo a una venta virtual. No representa una boleta, pago ni
+ * operación offline: sólo permite volver a completar el formulario.
+ */
 export interface SaleDraftData {
+  schemaVersion?: number;
+  draftId?: string;
   customerId?: string;
+  branchId?: string;
+  activePriceListId?: string;
+  items?: SaleDraftItemData[];
+  descuentoInput?: string;
+  recargoInput?: string;
+  pagoTipo?: SaleDraftPaymentType;
+  pagoEfectivoInput?: string;
+  pagoTransferenciaInput?: string;
+  pagoOtrosInput?: string;
   montoTotal?: string;
   estadoPago?: PaymentStatus;
   montoAbonado?: string;
   medioPago?: PaymentMethod;
   fotoUrl?: string;
+  stockJustification?: string;
+  createdAt?: string;
   updatedAt?: string;
+  createdByUserId?: string;
+  createdByUserName?: string;
+}
+
+export function createSaleDraftId(): string {
+  return `draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function hasSaleDraftContent(draft: SaleDraftData | null | undefined): boolean {
+  if (!draft) return false;
+  const hasMeaningfulAmount = (value: string | undefined) =>
+    typeof value === 'string' && value.trim() !== '' && Number(value.replace(',', '.')) !== 0;
+  return Boolean(
+    draft.customerId ||
+      draft.branchId ||
+      draft.activePriceListId ||
+      draft.items?.length ||
+      draft.fotoUrl ||
+      hasMeaningfulAmount(draft.montoTotal) ||
+      hasMeaningfulAmount(draft.montoAbonado) ||
+      hasMeaningfulAmount(draft.pagoEfectivoInput) ||
+      hasMeaningfulAmount(draft.pagoTransferenciaInput) ||
+      hasMeaningfulAmount(draft.pagoOtrosInput)
+  );
+}
+
+function normalizeSaleDraft(raw: unknown): SaleDraftData | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Partial<SaleDraftData>;
+  const items = Array.isArray(value.items)
+    ? value.items
+        .filter((item) => Boolean(item && typeof item === 'object'))
+        .filter((item) => typeof item.id === 'string' && typeof item.productId === 'string')
+        .map((item) => ({
+          id: item.id!,
+          productId: item.productId!,
+          unidadesInput: typeof item.unidadesInput === 'string' ? item.unidadesInput : '',
+          kilajeInput: typeof item.kilajeInput === 'string' ? item.kilajeInput : '',
+          precioOverride: typeof item.precioOverride === 'string' ? item.precioOverride : '',
+          observacion: typeof item.observacion === 'string' ? item.observacion : '',
+        }))
+    : [];
+
+  const draft: SaleDraftData = {
+    ...value,
+    schemaVersion: SALE_DRAFT_SCHEMA_VERSION,
+    draftId: typeof value.draftId === 'string' ? value.draftId : undefined,
+    customerId: typeof value.customerId === 'string' ? value.customerId : undefined,
+    branchId: typeof value.branchId === 'string' ? value.branchId : undefined,
+    activePriceListId: typeof value.activePriceListId === 'string' ? value.activePriceListId : undefined,
+    items,
+    descuentoInput: typeof value.descuentoInput === 'string' ? value.descuentoInput : '0',
+    recargoInput: typeof value.recargoInput === 'string' ? value.recargoInput : '0',
+    pagoTipo: ['DEBE', 'EFECTIVO', 'TRANSFERENCIA', 'MIXTO'].includes(value.pagoTipo || '')
+      ? value.pagoTipo as SaleDraftPaymentType
+      : 'DEBE',
+    pagoEfectivoInput: typeof value.pagoEfectivoInput === 'string' ? value.pagoEfectivoInput : '0',
+    pagoTransferenciaInput: typeof value.pagoTransferenciaInput === 'string' ? value.pagoTransferenciaInput : '0',
+    pagoOtrosInput: typeof value.pagoOtrosInput === 'string' ? value.pagoOtrosInput : '0',
+    fotoUrl: typeof value.fotoUrl === 'string' ? value.fotoUrl : '',
+    stockJustification: typeof value.stockJustification === 'string' ? value.stockJustification : '',
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : value.updatedAt,
+    updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : undefined,
+  };
+
+  return hasSaleDraftContent(draft) ? draft : null;
 }
 
 export function saveSaleDraft(draft: SaleDraftData): void {
   try {
-    if (!draft.customerId && !draft.montoTotal && !draft.fotoUrl) {
+    if (!hasSaleDraftContent(draft)) {
       localStorage.removeItem(SALE_DRAFT_KEY);
       return;
     }
     const current = getSaleDraft() || {};
-    const updated = { ...current, ...draft, updatedAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const updated = normalizeSaleDraft({
+      ...current,
+      ...draft,
+      schemaVersion: SALE_DRAFT_SCHEMA_VERSION,
+      draftId: draft.draftId || current.draftId || createSaleDraftId(),
+      createdAt: draft.createdAt || current.createdAt || now,
+      updatedAt: now,
+    });
+    if (!updated) {
+      localStorage.removeItem(SALE_DRAFT_KEY);
+      return;
+    }
     localStorage.setItem(SALE_DRAFT_KEY, JSON.stringify(updated));
   } catch (err) {
     console.error('Error guardando borrador de venta:', err);
@@ -93,7 +200,7 @@ export function saveSaleDraft(draft: SaleDraftData): void {
 export function getSaleDraft(): SaleDraftData | null {
   try {
     const raw = localStorage.getItem(SALE_DRAFT_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return raw ? normalizeSaleDraft(JSON.parse(raw)) : null;
   } catch (err) {
     return null;
   }

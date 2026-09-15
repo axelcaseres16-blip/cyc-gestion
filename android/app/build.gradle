@@ -34,8 +34,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Keep the same package and signing identity so Android updates the
         // installed test app in place and retains its local data.
-        versionCode 2
-        versionName "0.1.1"
+        versionCode 3
+        versionName "0.1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

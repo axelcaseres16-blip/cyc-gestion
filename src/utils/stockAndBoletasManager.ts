@@ -576,6 +576,8 @@ export function registerMataderoIngreso(ingreso: Omit<MataderoIngreso, 'id' | 's
 
 // Finalize a Virtual Boleta: updates Cuenta Corriente, Stock, and Virtual Boleta history
 export function finalizeVirtualBoleta(params: {
+  /** Local-only draft identity. It is never a boleta number. */
+  draftId?: string;
   numeroBoleta: string;
   customer: Customer;
   branchId?: string;
@@ -593,7 +595,30 @@ export function finalizeVirtualBoleta(params: {
   listaPrecioAplicada: string;
   priceListId?: string;
   priceListName?: string;
-}): { virtualBoleta: VirtualBoleta; movementBoleta: Movement } {
+}): { virtualBoleta: VirtualBoleta; movementBoleta: Movement; alreadyFinalized: boolean } {
+  // A draft can survive an app interruption after the accounting operation was
+  // persisted but before the UI cleared localStorage. Never replay it.
+  if (params.draftId) {
+    const existingVirtualBoleta = getStoredVirtualBoletas().find(
+      (boleta) => boleta.draftId === params.draftId
+    );
+    if (existingVirtualBoleta) {
+      const existingMovement = getStoredMovements().find(
+        (movement) =>
+          movement.id === existingVirtualBoleta.movementIdPrincipal ||
+          (movement.tipo === 'BOLETA' && movement.boletaVirtualId === existingVirtualBoleta.id)
+      );
+      if (!existingMovement) {
+        throw new Error('La venta ya fue finalizada, pero falta su movimiento principal. No se volverá a registrar.');
+      }
+      return {
+        virtualBoleta: existingVirtualBoleta,
+        movementBoleta: existingMovement,
+        alreadyFinalized: true,
+      };
+    }
+  }
+
   const period = getActiveStockPeriod();
   const nowIso = new Date().toISOString();
   const boletaId = `vboleta_${Date.now()}`;
@@ -625,6 +650,7 @@ export function finalizeVirtualBoleta(params: {
   // 1. Create Virtual Boleta Record
   const virtualBoleta: VirtualBoleta = {
     id: boletaId,
+    draftId: params.draftId,
     numeroBoleta: params.numeroBoleta,
     customerId: targetCust.id,
     customerName: targetCust.alias || targetCust.nombre,
@@ -855,7 +881,7 @@ export function finalizeVirtualBoleta(params: {
   // Disparar sincronización en segundo plano si hay conexión
   runFullSyncProcess().catch(() => {});
 
-  return { virtualBoleta, movementBoleta };
+  return { virtualBoleta, movementBoleta, alreadyFinalized: false };
 }
 
 export interface VirtualBoletaCancellationResult {
